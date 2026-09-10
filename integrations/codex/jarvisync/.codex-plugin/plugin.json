@@ -1,0 +1,19 @@
+{
+  "name": "jarvisync",
+  "version": "0.1.0",
+  "description": "本地 JarviSync 协作记录与接续插件模板。",
+  "author": {
+    "name": "JarviSync"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "JarviSync for Codex",
+    "shortDescription": "在 Codex 中接续已明确交办的工作。",
+    "longDescription": "为本地 JarviSync 提供会话绑定、协作约定与 MCP 工具；普通问答不会自动建档。",
+    "developerName": "JarviSync",
+    "category": "Productivity",
+    "capabilities": ["Local MCP", "Lifecycle hooks"],
+    "defaultPrompt": "继续我在 JarviSync 中已经交办的工作。"
+  },
+  "mcpServers": "./.mcp.json"
+}

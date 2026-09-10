@@ -1,0 +1,11 @@
+{
+  "description": "JarviSync session binding and advisory write-back checks.",
+  "hooks": {
+    "SessionStart": [{ "matcher": "startup|resume|compact", "hooks": [{ "type": "command", "command": "\"__NODE_EXECUTABLE__\" \"__HOOK_SCRIPT__\" --connection \"__CONNECTION_FILE__\" --host codex", "commandWindows": "\"__NODE_EXECUTABLE__\" \"__HOOK_SCRIPT__\" --connection \"__CONNECTION_FILE__\" --host codex", "timeout": 5, "additionalContextLimit": 1200 }] }],
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "\"__NODE_EXECUTABLE__\" \"__HOOK_SCRIPT__\" --connection \"__CONNECTION_FILE__\" --host codex", "commandWindows": "\"__NODE_EXECUTABLE__\" \"__HOOK_SCRIPT__\" --connection \"__CONNECTION_FILE__\" --host codex", "timeout": 5, "additionalContextLimit": 1200 }] }],
+    "PreCompact": [{ "matcher": "manual|auto", "hooks": [{ "type": "command", "command": "\"__NODE_EXECUTABLE__\" \"__HOOK_SCRIPT__\" --connection \"__CONNECTION_FILE__\" --host codex", "commandWindows": "\"__NODE_EXECUTABLE__\" \"__HOOK_SCRIPT__\" --connection \"__CONNECTION_FILE__\" --host codex", "timeout": 3 }] }],
+    "SubagentStart": [{ "hooks": [{ "type": "command", "command": "\"__NODE_EXECUTABLE__\" \"__HOOK_SCRIPT__\" --connection \"__CONNECTION_FILE__\" --host codex", "commandWindows": "\"__NODE_EXECUTABLE__\" \"__HOOK_SCRIPT__\" --connection \"__CONNECTION_FILE__\" --host codex", "timeout": 5, "additionalContextLimit": 1200 }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "\"__NODE_EXECUTABLE__\" \"__HOOK_SCRIPT__\" --connection \"__CONNECTION_FILE__\" --host codex", "commandWindows": "\"__NODE_EXECUTABLE__\" \"__HOOK_SCRIPT__\" --connection \"__CONNECTION_FILE__\" --host codex", "timeout": 5 }] }],
+    "Interrupt": [{ "hooks": [{ "type": "command", "command": "\"__NODE_EXECUTABLE__\" \"__HOOK_SCRIPT__\" --connection \"__CONNECTION_FILE__\" --host codex", "commandWindows": "\"__NODE_EXECUTABLE__\" \"__HOOK_SCRIPT__\" --connection \"__CONNECTION_FILE__\" --host codex", "timeout": 3 }] }]
+  }
+}

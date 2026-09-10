@@ -1,0 +1,57 @@
+.connection-backdrop { position: fixed; inset: 0; z-index: 100; padding: 28px; display: grid; place-items: center; background: #20292e66; backdrop-filter: blur(3px); }
+.connection-dialog { width: min(660px, 100%); max-height: calc(100dvh - 56px); overflow-y: auto; background: var(--paper); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 28px 32px 20px; box-shadow: 0 18px 70px #20292e33; }
+.connection-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
+.connection-eyebrow { display: flex; gap: 7px; align-items: center; color: var(--teal); font-size: 12px; }
+.connection-header h2 { font: 600 28px/1.4 var(--font-display); margin: 9px 0 0; }
+.connection-intro { color: var(--muted); font-size: 14px; line-height: 1.8; margin: 12px 0 22px; }
+.connection-hosts { display: grid; grid-template-columns: repeat(4,1fr); gap: 7px; margin-bottom: 25px; }
+.connection-hosts button { min-height: 42px; padding: 9px 7px; display: flex; align-items: center; justify-content: center; gap: 5px; border: 1px solid var(--line); border-radius: 4px; background: transparent; font-size: 13px; }
+.connection-hosts button.is-selected { color: var(--teal); border-color: var(--teal); background: color-mix(in srgb,var(--teal) 7%,var(--paper)); }
+.connection-scope { border: 0; padding: 0; margin: 0; }
+.connection-scope legend { font-weight: 600; font-size: 15px; margin-bottom: 13px; }
+.connection-scope label { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 15px; cursor: pointer; }
+.connection-scope input { margin-top: 4px; accent-color: var(--teal); }
+.connection-scope strong { display: block; font-weight: 500; font-size: 14px; }
+.connection-scope small { display: block; line-height: 1.7; margin-top: 5px; color: var(--muted); font-size: 12px; }
+.connection-scope select { width: 100%; padding: 10px; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 3px; }
+.connection-scope-edit { margin: 20px 0; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
+.connection-scope-edit > button { margin-top: 12px; }
+.connection-footnote, .connection-note { font-size: 12px; color: var(--muted); line-height: 1.8; }
+.connection-footnote { margin: 20px 0; }
+.connection-status { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; padding: 12px 0 18px; border-bottom: 1px solid var(--line); font-size: 14px; }
+.connection-status > span:last-child { width: 100%; color: var(--muted); font-size: 12px; padding-left: 17px; }
+.connection-state-dot { width: 7px; height: 7px; background: var(--orange); border-radius: 100%; }
+.connection-state-dot.is-ready { background: var(--teal); }
+.connection-steps { padding: 0; margin: 24px 0; list-style: none; }
+.connection-steps li { display: flex; gap: 15px; margin-bottom: 23px; }
+.connection-step-index { flex: 0 0 25px; height: 25px; display: grid; place-items: center; color: var(--teal); border: 1px solid var(--line); border-radius: 50%; font: 13px var(--font-display); }
+.connection-steps li > div { min-width: 0; flex: 1; }
+.connection-steps h3 { font-size: 15px; font-weight: 600; margin: 2px 0 8px; }
+.connection-steps p { font-size: 13px; line-height: 1.8; margin: 6px 0 12px; color: var(--muted); }
+.connection-steps small { font-size: 12px; color: var(--muted); line-height: 1.8; }
+.connection-link { display: inline-flex; gap: 5px; align-items: center; color: var(--teal); font-size: 12px; margin: 10px 0 5px 12px; }
+.connection-prompt { display: flex; align-items: flex-start; gap: 5px; padding: 12px; background: var(--mist); border-left: 2px solid var(--teal); }
+.connection-prompt p { color: var(--ink); margin: 0; }
+.connection-prompt .icon-button { flex-shrink: 0; }
+.connection-checks { display: flex; gap: 18px; margin-top: 12px; font-size: 12px; color: var(--muted); }
+.connection-checks > span { display: flex; gap: 5px; align-items: center; }
+.connection-checks .is-complete { color: var(--teal); }
+.check-empty { width: 10px; height: 10px; border: 1px solid var(--line); border-radius: 100%; }
+.connection-details { border-top: 1px solid var(--line); padding-top: 15px; color: var(--muted); font-size: 12px; }
+.connection-details summary { cursor: pointer; }
+.connection-details p { overflow-wrap: anywhere; line-height: 1.8; }
+.connection-footer { display: flex; justify-content: space-between; gap: 10px; margin-top: 17px; }
+.connection-footer button { padding: 0 6px; font-size: 12px; }
+.connection-error { color: var(--danger); line-height: 1.7; font-size: 13px; padding: 10px; background: color-mix(in srgb,var(--danger) 6%,var(--paper)); overflow-wrap: anywhere; }
+.connection-loading { display: flex; gap: 9px; align-items: center; font-size: 13px; }
+.agent-connect-button { display: flex; gap: 6px; align-items: center; padding: 7px 10px; border: 1px solid var(--line); border-radius: 3px; font-size: 12px; background: var(--paper); color: var(--teal); white-space: nowrap; }
+@media (max-width: 760px) {
+  .connection-backdrop { padding: 12px; }
+  .connection-dialog { padding: 20px 18px 14px; max-height: calc(100dvh - 24px); }
+  .connection-header h2 { font-size: 25px; }
+  .connection-hosts { grid-template-columns: repeat(2,1fr); gap: 6px; margin-bottom: 20px; }
+  .connection-steps li { gap: 10px; }
+  .connection-link { margin-left: 0; display: flex; }
+  .agent-connect-button { padding: 7px; }
+  .agent-connect-button span { display: none; }
+}

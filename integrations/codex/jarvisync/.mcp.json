@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "jarvisync": {
+      "command": "node",
+      "args": ["runtime/mcp.mjs"]
+    }
+  }
+}

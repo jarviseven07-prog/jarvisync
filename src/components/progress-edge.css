@@ -1,0 +1,65 @@
+.progress-edge {
+  --progress-edge-color: #c4b9a9;
+  --progress-edge-width: 1.55;
+}
+
+.progress-edge--active {
+  --progress-edge-color: var(--teal, #287e6d);
+  --progress-edge-width: 2;
+}
+
+.progress-edge--complete {
+  --progress-edge-color: var(--teal, #287e6d);
+  --progress-edge-width: 1.8;
+}
+
+.progress-edge__base {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: stroke 140ms ease, stroke-width 140ms ease;
+}
+
+.progress-edge__arrow {
+  fill: var(--progress-edge-color);
+}
+
+.progress-edge__relation {
+  pointer-events: none;
+  stroke: var(--red, #bd5345);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 5;
+  opacity: .12;
+}
+
+.progress-edge.is-selected .progress-edge__relation {
+  stroke-width: 6;
+  opacity: .27;
+}
+
+.progress-edge__packet {
+  pointer-events: none;
+  fill: none;
+  stroke: #7fb8a9;
+  stroke-linecap: round;
+  stroke-width: 3;
+  filter: drop-shadow(0 0 1.5px rgba(40, 126, 109, .42));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-edge__base {
+    transition: none;
+  }
+
+  .progress-edge__packet {
+    display: none;
+  }
+}
+
+html[data-theme='dark'] .progress-edge--idle {
+  --progress-edge-color: #817668;
+}
+
+html[data-theme='dark'] .progress-edge__packet {
+  stroke: #b1dbcc;
+}

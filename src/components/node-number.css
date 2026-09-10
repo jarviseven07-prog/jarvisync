@@ -1,0 +1,29 @@
+.node-number,
+.flow-node header .node-number {
+  display: inline-block;
+  flex: 0 1 auto;
+  max-width: 100%;
+  min-height: 19px;
+  padding: 1px 5px;
+  color: var(--ink);
+  background: #eee8df;
+  border: 1px solid #d7cabc;
+  border-radius: 2px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  letter-spacing: .025em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.list-node-title .node-number { margin-right: 8px; vertical-align: 1px; }
+.inspector-node-heading { display: flex; align-items: center; gap: 9px; }
+html[data-theme='dark'] .node-number,
+html[data-theme='dark'] .flow-node header .node-number {
+  color: #e3d8cb;
+  background: #3b352e;
+  border-color: #655a4d;
+}
