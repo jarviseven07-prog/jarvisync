@@ -157,14 +157,13 @@ test('verified candidate backs up and replaces an isolated old service before he
   await mkdir(join(directory, 'shared'), { recursive: true });
   await mkdir(join(directory, 'integrations'), { recursive: true });
   await mkdir(join(directory, 'scripts'), { recursive: true });
-  await mkdir(join(directory, 'work', 'agent-onboarding'), { recursive: true });
   await mkdir(data, { recursive: true });
   await mkdir(join(artifact, 'assets'), { recursive: true });
   await mkdir(join(directory, 'dist'), { recursive: true });
   await Promise.all([
     cp(join(root, 'server', 'build-identity.mjs'), join(directory, 'server', 'build-identity.mjs')),
     cp(join(root, 'scripts', 'verified-update.ps1'), join(directory, 'scripts', 'verified-update.ps1')),
-    cp(join(root, 'work', 'agent-onboarding', 'load-verified-update.ps1'), join(directory, 'work', 'agent-onboarding', 'load-verified-update.ps1')),
+    cp(join(root, 'scripts', 'load-verified-update.ps1'), join(directory, 'scripts', 'load-verified-update.ps1')),
     writeFile(join(directory, 'shared', 'runtime.mjs'), 'export const shared = true\n'),
     writeFile(join(directory, 'integrations', 'runtime.mjs'), 'export const integration = true\n'),
     writeFile(join(directory, 'dist', 'index.html'), '<main>old</main>\n'),
@@ -201,7 +200,7 @@ test('verified candidate backs up and replaces an isolated old service before he
   const candidate = JSON.parse(await readFile(manifestPath, 'utf8'));
   old = spawnNode(join(directory, 'server', 'mock-server.mjs'), { cwd: directory, env: { ...process.env, PORT: String(port), NODEBOARD_DATA_DIR: data, MOCK_LEGACY: '1' } });
   await waitFor(`http://127.0.0.1:${port}`, undefined, true);
-  const validateOnly = JSON.parse(await runPowerShell(`& ${quote(join(directory, 'work', 'agent-onboarding', 'load-verified-update.ps1'))} -ValidateOnly`));
+  const validateOnly = JSON.parse(await runPowerShell(`& ${quote(join(directory, 'scripts', 'load-verified-update.ps1'))} -ValidateOnly`));
   assert.equal(validateOnly.verified, true);
   assert.equal(validateOnly.pending, true);
   const command = [
