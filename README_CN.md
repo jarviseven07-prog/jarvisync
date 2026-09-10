@@ -2,6 +2,10 @@
 
 **给多个 Agent 共用的本地协作看板。**
 
+[![CI](https://github.com/jarviseven07-prog/jarvisync/actions/workflows/ci.yml/badge.svg)](https://github.com/jarviseven07-prog/jarvisync/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%E2%89%A524-brightgreen.svg)](https://nodejs.org)
+
 [English](README.md) | [中文](README_CN.md)
 
 ---

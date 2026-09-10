@@ -2,6 +2,10 @@
 
 **A local board that several AI agents share.**
 
+[![CI](https://github.com/jarviseven07-prog/jarvisync/actions/workflows/ci.yml/badge.svg)](https://github.com/jarviseven07-prog/jarvisync/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%E2%89%A524-brightgreen.svg)](https://nodejs.org)
+
 [English](README.md) | [中文](README_CN.md)
 
 > **Note:** the interface is currently Chinese-only. The code, APIs and agent
