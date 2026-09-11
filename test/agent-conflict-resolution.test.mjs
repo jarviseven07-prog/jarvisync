@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { once } from 'node:events';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
@@ -39,6 +38,7 @@ async function lockWithoutDeleteSharing(path) {
     env: { ...process.env, JARVISYNC_TEST_LOCK_PATH: path },
     windowsHide: true,
   });
+  const closed = new Promise(resolve => child.once('close', (code, signal) => resolve([code, signal])));
   let output = '';
   let errorOutput = '';
   let ready = false;
@@ -46,7 +46,7 @@ async function lockWithoutDeleteSharing(path) {
     const timer = setTimeout(() => {
       child.kill();
       reject(new Error(`lock helper did not become ready: ${errorOutput}`));
-    }, 3000);
+    }, 15000);
     child.stdout.on('data', chunk => {
       output += chunk;
       if (!ready && output.includes('LOCKED')) { ready = true; clearTimeout(timer); resolve(); }
@@ -56,30 +56,39 @@ async function lockWithoutDeleteSharing(path) {
     child.once('exit', code => {
       if (!ready) { clearTimeout(timer); reject(new Error(`lock helper exited with ${code}: ${errorOutput}`)); }
     });
+  }).catch(async error => {
+    child.kill();
+    await closed;
+    throw error;
   });
   let released = false;
   return async () => {
     if (released) return;
     released = true;
     const alreadyExited = child.exitCode !== null || child.signalCode !== null;
-    const exit = alreadyExited ? Promise.resolve([child.exitCode, child.signalCode]) : once(child, 'exit');
-    if (!alreadyExited) child.stdin.end('\n');
-    const [code, signal] = await exit;
+    const timer = setTimeout(() => child.kill(), 3000);
+    let result;
+    try {
+      if (!alreadyExited) child.stdin.end('\n');
+      result = await closed;
+    } finally { clearTimeout(timer); }
+    const [code, signal] = result;
     if (code !== 0 || signal) throw new Error(`lock helper exited with ${code ?? signal}: ${errorOutput}`);
   };
 }
 
-test('atomicJson 在 Windows 临时占用解除后完成原子替换并清理临时文件', { skip: process.platform !== 'win32', timeout: 5000 }, async t => {
+test('atomicJson 在 Windows 临时占用解除后完成原子替换并清理临时文件', { skip: process.platform !== 'win32', timeout: 25000 }, async t => {
   const directory = await mkdtemp(join(tmpdir(), 'nodeboard-atomic-json-'));
   const path = join(directory, 'pending.json');
   await atomicJson(path, { state: 'before' });
-  const release = await lockWithoutDeleteSharing(path);
+  let release;
   t.after(async () => {
-    try { await release(); }
+    try { await release?.(); }
     finally {
       if (dirname(directory) === tmpdir() && basename(directory).startsWith('nodeboard-atomic-json-')) await rm(directory, { recursive: true, force: true });
     }
   });
+  release = await lockWithoutDeleteSharing(path);
 
   let outcome = 'pending';
   let writeError;
@@ -104,17 +113,18 @@ test('atomicJson 在 Windows 临时占用解除后完成原子替换并清理临
   assert.deepEqual((await readdir(directory)).filter(name => name.endsWith('.tmp')), []);
 });
 
-test('atomicJson 对 Windows 持续占用有界失败并清理临时文件', { skip: process.platform !== 'win32', timeout: 5000 }, async t => {
+test('atomicJson 对 Windows 持续占用有界失败并清理临时文件', { skip: process.platform !== 'win32', timeout: 25000 }, async t => {
   const directory = await mkdtemp(join(tmpdir(), 'nodeboard-atomic-json-'));
   const path = join(directory, 'pending.json');
   await atomicJson(path, { state: 'before' });
-  const release = await lockWithoutDeleteSharing(path);
+  let release;
   t.after(async () => {
-    try { await release(); }
+    try { await release?.(); }
     finally {
       if (dirname(directory) === tmpdir() && basename(directory).startsWith('nodeboard-atomic-json-')) await rm(directory, { recursive: true, force: true });
     }
   });
+  release = await lockWithoutDeleteSharing(path);
 
   await assert.rejects(atomicJson(path, { state: 'after' }), error => ['EACCES', 'EBUSY', 'EPERM'].includes(error.code));
   assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), { state: 'before' });

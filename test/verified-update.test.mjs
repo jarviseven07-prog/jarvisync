@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { once } from 'node:events';
@@ -241,7 +241,10 @@ test('build identity maps a verified artifact and installed dist to the same run
 });
 
 test('verified candidate backs up and replaces an isolated old service before health readback', async t => {
-  const directory = await mkdtemp(join(tmpdir(), 'jarvisync-verified-update-'));
+  // GitHub's Windows TEMP may contain an 8.3 alias such as RUNNER~1.
+  // Windows PowerShell expands it before checking the process command line,
+  // so launch the fixture through the same canonical path.
+  const directory = await realpath(await mkdtemp(join(tmpdir(), 'jarvisync-verified-update-')));
   const data = join(directory, 'data');
   let old; let loadedPid;
   let serverEntry;
