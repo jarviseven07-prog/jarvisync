@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
 import { cp, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -14,17 +13,11 @@ const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const powershell = process.env.JARVISYNC_TEST_POWERSHELL || join(process.env.SystemRoot || 'C:/Windows', 'System32/WindowsPowerShell/v1.0/powershell.exe');
 const quote = value => `'${String(value).replaceAll("'", "''")}'`;
 
-async function freePort() {
-  const server = createServer();
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
-  const { port } = server.address();
-  await new Promise(resolve => server.close(resolve));
-  return port;
-}
-
 function spawnNode(entry, { cwd, env }) {
-  return spawn(process.execPath, [entry], { cwd, env, windowsHide: true, stdio: 'ignore' });
+  const child = spawn(process.execPath, [entry], { cwd, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  child.stderrText = '';
+  child.stderr.on('data', chunk => { child.stderrText += chunk; });
+  return child;
 }
 
 async function waitFor(url, expectedBuildId, allowLegacy = false) {
@@ -39,6 +32,115 @@ async function waitFor(url, expectedBuildId, allowLegacy = false) {
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   throw new Error('mock service did not become healthy');
+}
+
+async function waitForMockReady({ child, readyPath, lockPath }) {
+  let lastError;
+  for (let attempt = 0; attempt < 80; attempt++) {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      const reason = child.signalCode ? `signal ${child.signalCode}` : `exit ${child.exitCode}`;
+      throw new Error(`mock service exited early (${reason}): ${child.stderrText || 'no stderr'}`);
+    }
+    try {
+      const ready = JSON.parse(await readFile(readyPath, 'utf8'));
+      const lock = JSON.parse(await readFile(lockPath, 'utf8'));
+      if (ready.pid !== child.pid) throw new Error(`ready pid ${ready.pid} does not match mock pid ${child.pid}`);
+      if (lock.pid !== child.pid) throw new Error(`lock pid ${lock.pid} does not match mock pid ${child.pid}`);
+      if (!Number.isInteger(ready.port) || ready.port < 1 || ready.port > 65535) throw new Error(`invalid mock port ${ready.port}`);
+      return ready;
+    } catch (error) { lastError = error; }
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  throw new Error(`mock service did not report a matching ready record: ${lastError?.message || child.stderrText || 'no diagnostic'}`);
+}
+
+async function endpointDiagnostics(url, kind) {
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(2_000) });
+    let body;
+    try { body = await response.json(); } catch { /* Status is still useful when the body is not JSON. */ }
+    return kind === 'board'
+      ? { status: response.status, schemaVersion: body?.schemaVersion, revision: body?.revision, projectsArray: Array.isArray(body?.projects), nodesArray: Array.isArray(body?.nodes) }
+      : { status: response.status, product: body?.product, boardInstanceId: body?.boardInstanceId, buildId: body?.buildId };
+  } catch (error) { return { error: error.message }; }
+}
+
+async function powershellHttpDiagnostics(port) {
+  try {
+    return JSON.parse(await runPowerShell(`
+      Set-StrictMode -Version Latest
+      function Get-DiagnosticHttpStatus($ErrorRecord) {
+        $responseProperty = $ErrorRecord.Exception.PSObject.Properties['Response']
+        if (-not $responseProperty -or -not $responseProperty.Value) { return $null }
+        try { return [int]$responseProperty.Value.StatusCode } catch { return $null }
+      }
+      $board = $null; $boardWeb = $null; $health = $null
+      try {
+        $boardBody = Invoke-RestMethod -Uri 'http://127.0.0.1:${port}/api/board' -TimeoutSec 2
+        $board = [pscustomobject]@{ status = 200; schemaVersion = $boardBody.schemaVersion; revision = $boardBody.revision; projectsArray = ($boardBody.projects -is [object[]]); nodesArray = ($boardBody.nodes -is [object[]]) }
+      } catch {
+        $board = [pscustomobject]@{ status = Get-DiagnosticHttpStatus $_; error = $_.Exception.Message }
+      }
+      try {
+        $boardWebResponse = Invoke-WebRequest -Uri 'http://127.0.0.1:${port}/api/board' -TimeoutSec 2 -UseBasicParsing
+        $boardWeb = [pscustomobject]@{ status = [int]$boardWebResponse.StatusCode }
+      } catch {
+        $boardWeb = [pscustomobject]@{ status = Get-DiagnosticHttpStatus $_; error = $_.Exception.Message }
+      }
+      try {
+        $healthResponse = Invoke-WebRequest -Uri 'http://127.0.0.1:${port}/api/health' -TimeoutSec 2 -UseBasicParsing
+        $healthBody = $healthResponse.Content | ConvertFrom-Json
+        $health = [pscustomobject]@{ status = [int]$healthResponse.StatusCode; product = $healthBody.product; boardInstanceId = $healthBody.boardInstanceId; buildId = $healthBody.buildId }
+      } catch {
+        $health = [pscustomobject]@{ status = Get-DiagnosticHttpStatus $_; error = $_.Exception.Message }
+      }
+      [pscustomobject]@{ board = $board; boardWeb = $boardWeb; health = $health } | ConvertTo-Json -Depth 4 -Compress
+    `));
+  } catch (error) { return { error: error.message }; }
+}
+
+async function isolatedRuntimeDiagnostics({ data, port, old, serverEntry }) {
+  let lock;
+  try { lock = JSON.parse(await readFile(join(data, 'server.lock'), 'utf8')); }
+  catch (error) { lock = { error: error.message }; }
+  let process;
+  try {
+    process = JSON.parse(await runPowerShell([
+      "$listenerError = $null; $processError = $null",
+      `try { $listeners = @(Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction Stop | ForEach-Object { [pscustomobject]@{ pid = [int]$_.OwningProcess; address = $_.LocalAddress } }) } catch { $listeners = @(); $listenerError = $_.Exception.Message }`,
+      `try { $target = Get-CimInstance Win32_Process -Filter 'ProcessId=${old?.pid || 0}' -ErrorAction Stop; $targetInfo = if ($target) { [pscustomobject]@{ pid = [int]$target.ProcessId; name = $target.Name; commandLine = $target.CommandLine } } else { $null } } catch { $targetInfo = $null; $processError = $_.Exception.Message }`,
+      '[pscustomobject]@{ listeners = $listeners; listenerError = $listenerError; target = $targetInfo; processError = $processError } | ConvertTo-Json -Depth 4 -Compress',
+    ].join('; ')));
+  } catch (error) { process = { error: error.message }; }
+  return {
+    expectedMockPid: old?.pid,
+    expectedServerEntry: serverEntry,
+    mockExitCode: old?.exitCode,
+    mockStderr: old?.stderrText || '',
+    lock,
+    process,
+    nodeHttp: {
+      board: await endpointDiagnostics(`http://127.0.0.1:${port}/api/board`, 'board'),
+      health: await endpointDiagnostics(`http://127.0.0.1:${port}/api/health`, 'health'),
+    },
+    powershellHttp: await powershellHttpDiagnostics(port),
+  };
+}
+
+async function fixtureServerPidFromLock({ data, serverEntry }) {
+  if (!serverEntry) return undefined;
+  let pid;
+  try { pid = JSON.parse(await readFile(join(data, 'server.lock'), 'utf8')).pid; }
+  catch { return undefined; }
+  if (!Number.isInteger(pid) || pid < 1) return undefined;
+  try {
+    const result = JSON.parse(await runPowerShell([
+      `$target = Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}' -ErrorAction SilentlyContinue`,
+      `$matchesFixture = $target -and $target.Name -eq 'node.exe' -and $target.CommandLine -and $target.CommandLine.IndexOf(${quote(serverEntry)}, [System.StringComparison]::OrdinalIgnoreCase) -ge 0`,
+      'if ($matchesFixture) { [pscustomobject]@{ pid = [int]$target.ProcessId } | ConvertTo-Json -Compress } else { $null | ConvertTo-Json -Compress }',
+    ].join('; ')));
+    return result?.pid === pid ? pid : undefined;
+  } catch { return undefined; }
 }
 
 async function runPowerShell(command) {
@@ -140,10 +242,16 @@ test('build identity maps a verified artifact and installed dist to the same run
 
 test('verified candidate backs up and replaces an isolated old service before health readback', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'jarvisync-verified-update-'));
-  const port = await freePort();
+  const data = join(directory, 'data');
   let old; let loadedPid;
+  let serverEntry;
   t.after(async () => {
-    for (const pid of [old?.pid, loadedPid]) await stopProcess(pid);
+    const stopped = new Set();
+    for (const pid of [old?.pid, loadedPid]) {
+      if (pid) { await stopProcess(pid); stopped.add(pid); }
+    }
+    const fixturePid = await fixtureServerPidFromLock({ data, serverEntry });
+    if (fixturePid && !stopped.has(fixturePid)) await stopProcess(fixturePid);
     let cleanupError;
     for (let attempt = 0; attempt < 20; attempt++) {
       try { await rm(directory, { recursive: true, force: true }); return; }
@@ -151,7 +259,6 @@ test('verified candidate backs up and replaces an isolated old service before he
     }
     throw cleanupError;
   });
-  const data = join(directory, 'data');
   const artifact = join(directory, 'artifacts', 'agent-onboarding-build');
   await mkdir(join(directory, 'server'), { recursive: true });
   await mkdir(join(directory, 'shared'), { recursive: true });
@@ -179,7 +286,7 @@ test('verified candidate backs up and replaces an isolated old service before he
     import { computeBuildId } from './build-identity.mjs';
     const data = process.env.NODEBOARD_DATA_DIR;
     const root = process.cwd();
-    const port = Number(process.env.PORT);
+    const port = Number(process.env.PORT || 0);
     const legacy = process.env.MOCK_LEGACY === '1';
     let identity;
     try { identity = JSON.parse(await readFile(join(data, 'instance.json'), 'utf8')); }
@@ -191,14 +298,18 @@ test('verified candidate backs up and replaces an isolated old service before he
       const body = health && !legacy ? { product: 'JarviSync', boardInstanceId: identity.boardInstanceId, buildId } : request.url === '/api/board' ? board : { error: 'missing' };
       response.writeHead((health && !legacy) || request.url === '/api/board' ? 200 : 404, { 'Content-Type': 'application/json' }); response.end(JSON.stringify(body));
     });
-    server.listen(port, '127.0.0.1', async () => { await writeFile(join(data, 'server.lock'), JSON.stringify({ pid: process.pid })); });
+    await writeFile(join(data, 'server.lock'), JSON.stringify({ pid: process.pid }));
+    await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
+    await writeFile(join(data, 'mock-server-ready.json'), JSON.stringify({ pid: process.pid, port: server.address().port }));
   `);
   await mkdir(join(directory, 'artifacts', 'agent-onboarding-qa'), { recursive: true });
   const manifestPath = join(directory, 'artifacts', 'agent-onboarding-qa', 'verified-files.json');
   await cp(join(root, 'scripts', 'write-verified-manifest.mjs'), join(directory, 'scripts', 'write-verified-manifest.mjs'));
   await runNodeScript(join(directory, 'scripts', 'write-verified-manifest.mjs'), [directory, artifact, manifestPath], directory);
   const candidate = JSON.parse(await readFile(manifestPath, 'utf8'));
-  old = spawnNode(join(directory, 'server', 'mock-server.mjs'), { cwd: directory, env: { ...process.env, PORT: String(port), NODEBOARD_DATA_DIR: data, MOCK_LEGACY: '1' } });
+  serverEntry = join(directory, 'server', 'mock-server.mjs');
+  old = spawnNode(serverEntry, { cwd: directory, env: { ...process.env, PORT: '0', NODEBOARD_DATA_DIR: data, MOCK_LEGACY: '1' } });
+  const { port } = await waitForMockReady({ child: old, readyPath: join(data, 'mock-server-ready.json'), lockPath: join(data, 'server.lock') });
   await waitFor(`http://127.0.0.1:${port}`, undefined, true);
   const validateOnly = JSON.parse(await runPowerShell(`& ${quote(join(directory, 'scripts', 'load-verified-update.ps1'))} -ValidateOnly`));
   assert.equal(validateOnly.verified, true);
@@ -206,11 +317,12 @@ test('verified candidate backs up and replaces an isolated old service before he
   const command = [
     `. ${quote(join(directory, 'scripts', 'verified-update.ps1'))}`,
     `$candidate = Get-JarviSyncVerifiedCandidate -Root ${quote(directory)} -NodeExecutable ${quote(process.execPath)}`,
-    `Invoke-JarviSyncVerifiedUpdate -Candidate $candidate -DataDir ${quote(data)} -Port ${port} -NodeExecutable ${quote(process.execPath)} -ServerEntry ${quote(join(directory, 'server', 'mock-server.mjs'))} | ConvertTo-Json -Compress`,
+    `Invoke-JarviSyncVerifiedUpdate -Candidate $candidate -DataDir ${quote(data)} -Port ${port} -NodeExecutable ${quote(process.execPath)} -ServerEntry ${quote(serverEntry)} | ConvertTo-Json -Compress`,
   ].join('; ');
   let loaded;
   try { loaded = JSON.parse(await runPowerShell(command)); }
   catch (error) {
+    error.message += `\nIsolated runtime diagnostics:\n${JSON.stringify(await isolatedRuntimeDiagnostics({ data, port, old, serverEntry }))}`;
     error.message += `\nIsolated launcher diagnostics:\n${await launcherDiagnostics(data)}`;
     throw error;
   }
@@ -289,4 +401,3 @@ test('verified update backup skips a locked Electron profile but preserves all b
     /used by another process|because it is being used|cannot access|拒绝访问/i,
   );
 });
-

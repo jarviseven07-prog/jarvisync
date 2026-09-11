@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
@@ -23,6 +25,102 @@ async function fixture(t) {
 const pendingPath = (f, id) => join(f.config.stateDir, 'pending', `${digest(id)}.json`);
 const resolutionPath = (f, id) => join(f.config.stateDir, 'resolved', `${digest(id)}.json`);
 const resolutionClaimPath = (f, id) => join(f.config.stateDir, 'resolution-claims', `${digest(id)}.json`);
+
+async function lockWithoutDeleteSharing(path) {
+  const script = [
+    '$stream = [System.IO.File]::Open($env:JARVISYNC_TEST_LOCK_PATH, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)',
+    '[Console]::Out.WriteLine("LOCKED")',
+    '[Console]::Out.Flush()',
+    '[Console]::In.ReadLine() | Out-Null',
+    '$stream.Dispose()',
+  ].join('; ');
+  const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+    env: { ...process.env, JARVISYNC_TEST_LOCK_PATH: path },
+    windowsHide: true,
+  });
+  let output = '';
+  let errorOutput = '';
+  let ready = false;
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error(`lock helper did not become ready: ${errorOutput}`));
+    }, 3000);
+    child.stdout.on('data', chunk => {
+      output += chunk;
+      if (!ready && output.includes('LOCKED')) { ready = true; clearTimeout(timer); resolve(); }
+    });
+    child.stderr.on('data', chunk => { errorOutput += chunk; });
+    child.once('error', error => { clearTimeout(timer); reject(error); });
+    child.once('exit', code => {
+      if (!ready) { clearTimeout(timer); reject(new Error(`lock helper exited with ${code}: ${errorOutput}`)); }
+    });
+  });
+  let released = false;
+  return async () => {
+    if (released) return;
+    released = true;
+    const alreadyExited = child.exitCode !== null || child.signalCode !== null;
+    const exit = alreadyExited ? Promise.resolve([child.exitCode, child.signalCode]) : once(child, 'exit');
+    if (!alreadyExited) child.stdin.end('\n');
+    const [code, signal] = await exit;
+    if (code !== 0 || signal) throw new Error(`lock helper exited with ${code ?? signal}: ${errorOutput}`);
+  };
+}
+
+test('atomicJson 在 Windows 临时占用解除后完成原子替换并清理临时文件', { skip: process.platform !== 'win32', timeout: 5000 }, async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'nodeboard-atomic-json-'));
+  const path = join(directory, 'pending.json');
+  await atomicJson(path, { state: 'before' });
+  const release = await lockWithoutDeleteSharing(path);
+  t.after(async () => {
+    try { await release(); }
+    finally {
+      if (dirname(directory) === tmpdir() && basename(directory).startsWith('nodeboard-atomic-json-')) await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  let outcome = 'pending';
+  let writeError;
+  const write = atomicJson(path, { state: 'after' }).then(
+    () => { outcome = 'fulfilled'; },
+    error => { outcome = 'rejected'; writeError = error; return error; },
+  );
+  let temporaryObserved = false;
+  for (let attempt = 0; attempt < 100 && outcome === 'pending'; attempt++) {
+    temporaryObserved = (await readdir(directory)).some(name => name.startsWith('pending.json.') && name.endsWith('.tmp'));
+    if (temporaryObserved) break;
+    await new Promise(resolve => setTimeout(resolve, 5));
+  }
+  if (temporaryObserved) await new Promise(resolve => setTimeout(resolve, 150));
+  assert.equal(outcome, 'pending', writeError?.message);
+  assert.equal(temporaryObserved, true);
+  assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), { state: 'before' });
+  assert.equal((await readdir(directory)).some(name => name.startsWith('pending.json.') && name.endsWith('.tmp')), true);
+  await release();
+  assert.equal(await write, undefined);
+  assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), { state: 'after' });
+  assert.deepEqual((await readdir(directory)).filter(name => name.endsWith('.tmp')), []);
+});
+
+test('atomicJson 对 Windows 持续占用有界失败并清理临时文件', { skip: process.platform !== 'win32', timeout: 5000 }, async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'nodeboard-atomic-json-'));
+  const path = join(directory, 'pending.json');
+  await atomicJson(path, { state: 'before' });
+  const release = await lockWithoutDeleteSharing(path);
+  t.after(async () => {
+    try { await release(); }
+    finally {
+      if (dirname(directory) === tmpdir() && basename(directory).startsWith('nodeboard-atomic-json-')) await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  await assert.rejects(atomicJson(path, { state: 'after' }), error => ['EACCES', 'EBUSY', 'EPERM'].includes(error.code));
+  assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), { state: 'before' });
+  assert.deepEqual((await readdir(directory)).filter(name => name.endsWith('.tmp')), []);
+  await release();
+});
 
 async function createBoundNode(f, prefix = 'work') {
   return f.client.attach({
@@ -175,12 +273,19 @@ test('同一 retry 并发共享替代请求 ID，业务变更只提交一次', a
     ]);
   } finally { globalThis.fetch = originalFetch; }
   assert.equal(discoverCount, 2);
-  assert.equal(results.filter(result => result.status === 'rejected').length, 0);
+  const rejections = results.filter(result => result.status === 'rejected').map(result => ({
+    message: result.reason?.message,
+    code: result.reason?.details?.code,
+    details: result.reason?.details,
+  }));
+  assert.deepEqual(rejections, []);
   const receipts = results.map(result => result.value);
   assert.ok(receipts.every(receipt => receipt.replacementOperationId === receipts[0].replacementOperationId));
   const after = await f.app.store.read();
   assert.equal(after.revision, before.revision + 1);
   assert.equal(after.nodes.find(node => node.id === pending.attached.nodeIdsByKey.node).progress, 'same-retry retried body');
+  assert.deepEqual(await readdir(join(f.config.stateDir, 'pending')), []);
+  assert.equal((await readdir(join(f.config.stateDir, 'resolved'))).length, 1);
 });
 
 test('崩溃在 claim 保存后、映射保存前时，新 client 沿用原 claim 的版本和替代 ID', async t => {

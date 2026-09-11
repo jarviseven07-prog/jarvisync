@@ -13,7 +13,15 @@ export async function atomicJson(path, value) {
     const handle = await open(temp, 'wx');
     try { await handle.writeFile(`${JSON.stringify(value, null, 2)}\n`); await handle.sync(); }
     finally { await handle.close(); }
-    await rename(temp, path);
+    for (let attempt = 0; ; attempt++) {
+      try { await rename(temp, path); break; }
+      catch (error) {
+        // Windows can transiently reject an atomic replacement while another
+        // process holds the destination or is replacing the same file.
+        if (!['EACCES', 'EBUSY', 'EPERM'].includes(error.code) || attempt >= 19) throw error;
+        await new Promise(resolve => setTimeout(resolve, Math.min(5 * (attempt + 1), 50)));
+      }
+    }
   }
   finally { await unlink(temp).catch(() => {}); }
 }
