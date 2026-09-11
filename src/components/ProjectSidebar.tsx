@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent, type MouseEvent, type ReactNode } from 'react';
 import {
   ChevronDown, ChevronLeft, ChevronRight, ChevronUp, FolderPen, FolderPlus,
-  Archive, ArchiveRestore, GripVertical, MoreHorizontal, Trash2, X,
+  Archive, ArchiveRestore, GripVertical, MoreHorizontal, Square, Trash2, X,
 } from 'lucide-react';
 import type { Project, ProjectGroup, WorkNode } from '../types';
 import { ProjectNumber } from './ProjectNumber';
@@ -27,6 +27,7 @@ interface ProjectSidebarProps {
   onMoveProject: (id: string, groupId: string | null, beforeId?: string | null) => Promise<boolean>;
   onRemoveProject: (id: string) => void;
   onArchiveProject: (id: string, archived: boolean) => Promise<boolean>;
+  onForceStopProject: (id: string) => void;
 }
 
 interface ProjectEntry { project: Project; originalIndex: number }
@@ -103,7 +104,7 @@ function SidebarMenu({ label, className = '', children }: { label: string; class
 
 export function ProjectSidebar({
   projects, nodes, groups, activeProjectId, busy, open, onClose, onToggle, onSelect,
-  onOpenProject, onCreateGroup, onRenameGroup, onRemoveGroup, onMoveProject, onRemoveProject, onArchiveProject,
+  onOpenProject, onCreateGroup, onRenameGroup, onRemoveGroup, onMoveProject, onRemoveProject, onArchiveProject, onForceStopProject,
 }: ProjectSidebarProps) {
   const [creatingGroup, setCreatingGroup] = useState(false);
   const [groupTitle, setGroupTitle] = useState('');
@@ -346,7 +347,10 @@ export function ProjectSidebar({
                               </select>
                               <button type="button" disabled={effectiveBusy || runningProjects.has(project.id)} onClick={(event) => { closeMenu(event.currentTarget); void runAction(() => onArchiveProject(project.id, true), '项目未归档，请核对提示后重试。'); }}><Archive size={14} /> 归档项目</button>
                               <button className="danger-menu-action project-delete-action" type="button" disabled={effectiveBusy || runningProjects.has(project.id)} onClick={(event) => { closeMenu(event.currentTarget); onRemoveProject(project.id); }}><Trash2 size={14} /> 删除项目</button>
-                              {runningProjects.has(project.id) && <p className="project-menu-hint">仍有任务在执行，结束后可归档或删除。</p>}
+                              {runningProjects.has(project.id) && <>
+                                <button className="danger-menu-action" type="button" disabled={effectiveBusy} onClick={event => { closeMenu(event.currentTarget); onForceStopProject(project.id); }}><Square size={14} /> 强制结束任务…</button>
+                                <p className="project-menu-hint">可手动结束执行，再归档或删除。</p>
+                              </>}
                           </SidebarMenu>
                         </article>
                       );

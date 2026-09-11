@@ -21,6 +21,7 @@ import { NodeCanvas } from './components/NodeCanvas';
 import { NodeList } from './components/NodeList';
 import { ProjectSidebar } from './components/ProjectSidebar';
 import { DeleteProjectDialog } from './components/DeleteProjectDialog';
+import { ForceStopDialog } from './components/ForceStopDialog';
 import { AgentConnection } from './components/AgentConnection';
 import { DesktopWindowControls } from './components/DesktopWindowControls';
 import { ProjectNumber } from './components/ProjectNumber';
@@ -59,6 +60,8 @@ function App() {
   const [removingProjectId, setRemovingProjectId] = useState<string | null>(null);
   const [connectionOpen, setConnectionOpen] = useState(false);
   const [removeProjectError, setRemoveProjectError] = useState('');
+  const [forceStop, setForceStop] = useState<{ id: string; title: string; project: boolean; tasks: Array<{ nodeId: string; runId: string; title: string }> } | null>(null);
+  const [forceStopError, setForceStopError] = useState('');
   const [view, setView] = useState<BoardView>(() => initialBoardView(readPreference('nodeboard.view'), window.innerWidth > 0 && window.matchMedia('(max-width: 760px)').matches));
   const [listOrder, setListOrder] = useState<ListOrder>(() => readPreference('nodeboard.listOrder') === 'updated' ? 'updated' : 'dependency');
   const [layoutFitRevision, setLayoutFitRevision] = useState(0);
@@ -408,6 +411,32 @@ function App() {
     return Boolean(next);
   }
 
+  function requestForceStop(id: string, project: boolean) {
+    const current = boardRef.current;
+    if (busyRef.current || !current) return;
+    const target = project ? current.projects.find(item => item.id === id) : current.nodes.find(item => item.id === id);
+    if (!target) return;
+    const tasks = current.nodes.filter(node => project ? node.projectId === id : node.id === id).flatMap(node =>
+      (node.executions ?? []).filter(run => run.endedAt === undefined).map(run => ({ nodeId: node.id, runId: run.id, title: node.title })));
+    if (!tasks.length) return;
+    setForceStopError('');
+    setForceStop({ id, title: target.title, project, tasks });
+  }
+
+  async function confirmForceStop() {
+    if (!forceStop) return;
+    setForceStopError('');
+    const next = await commit(forceStop.project
+      ? { type: 'project.force-stop', id: forceStop.id, executions: forceStop.tasks.map(({ nodeId, runId }) => ({ nodeId, runId })) }
+      : { type: 'node.force-stop', id: forceStop.id, runId: forceStop.tasks[0].runId });
+    if (!next) {
+      setForceStopError('未结束任务。请取消后刷新核对，再重试。');
+      return;
+    }
+    setForceStop(null);
+    setNotice('本次执行已由你结束，进展和成果已保留。', 'success');
+  }
+
   async function removeProject() {
     const id = removingProjectId;
     if (!id || (id === activeProjectId && !guardNavigation())) return;
@@ -545,6 +574,7 @@ function App() {
         onMoveProject={moveProject}
         onRemoveProject={requestRemoveProject}
         onArchiveProject={archiveProject}
+        onForceStopProject={id => requestForceStop(id, true)}
       />
 
       <main className="workspace">
@@ -668,6 +698,7 @@ function App() {
               onSelectNode={selectNode}
               onSubmitInput={submitHumanInput}
               onDraftChange={updateHumanDraftDirty}
+              onForceStopNode={id => requestForceStop(id, false)}
             />
           )}
         </div>
@@ -683,6 +714,7 @@ function App() {
           onConfirm={() => void removeProject()}
         />
       )}
+      {forceStop && <ForceStopDialog title={forceStop.title} project={forceStop.project} tasks={forceStop.tasks} busy={busy} error={forceStopError} onCancel={() => setForceStop(null)} onConfirm={() => void confirmForceStop()} />}
       </div>
     </div>
   );

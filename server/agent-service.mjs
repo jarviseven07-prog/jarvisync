@@ -52,6 +52,10 @@ function findBinding(board, session) {
   return (board.agentBindings ?? []).find(binding => sameSession(binding, session)) ?? null;
 }
 
+function findHumanEndedSession(board, session) {
+  return (board.humanEndedSessions ?? []).find(item => sameSession(item, session)) ?? null;
+}
+
 function candidates(board) {
   return board.projects
     .filter(project => !project.archived && !project.demo)
@@ -113,6 +117,7 @@ function compactBinding(binding) {
     recording: binding.recording,
     createdAt: binding.createdAt,
     updatedAt: binding.updatedAt,
+    ...(binding.humanEndedAt ? { humanEndedAt: binding.humanEndedAt } : {}),
   };
 }
 
@@ -228,6 +233,17 @@ function bindingConflict(board, binding, message = '这个会话已经关联了�
   });
 }
 
+function assertSessionNotHumanEnded(board, session, binding = findBinding(board, session)) {
+  const tombstone = findHumanEndedSession(board, session);
+  const humanEndedAt = tombstone?.endedAt ?? binding?.humanEndedAt;
+  if (!humanEndedAt) return;
+  throw new BoardError('这个会话绑定的执行已由人在看板结束，不能继续写回。请在新的宿主会话中重新关联后继续。', 409, {
+    code: 'human-ended',
+    humanEndedAt,
+    binding: publicBinding(binding),
+  });
+}
+
 function validateCreate(value) {
   onlyKeys(value, ['title', 'summary', 'nodes'], '新项目');
   const title = requiredText(value.title, '项目名称', 120);
@@ -267,6 +283,7 @@ function savedRecord(board, change) {
 }
 
 function ensureBindingScope(board, binding, session, change) {
+  assertSessionNotHumanEnded(board, session, binding);
   if (!binding.recording) throw new BoardError('这个会话已停用工作记录。', 403, { code: 'recording-disabled' });
   if (!change || typeof change !== 'object' || Array.isArray(change) || typeof change.type !== 'string') throw new BoardError('变更格式不正确。');
   if (change.type === 'project.create') throw new BoardError('新建项目请使用 attach 的 create。');
@@ -356,7 +373,15 @@ export function openAgentService({ store }) {
       const session = normalizeSession(request.session);
       const board = await store.read();
       const binding = findBinding(board, session);
-      return { boardInstanceId: store.boardInstanceId, revision: board.revision, binding: publicBinding(binding), candidates: binding ? [] : candidates(board) };
+      const tombstone = findHumanEndedSession(board, session);
+      const humanEndedAt = tombstone?.endedAt ?? binding?.humanEndedAt;
+      return {
+        boardInstanceId: store.boardInstanceId,
+        revision: board.revision,
+        binding: publicBinding(binding),
+        candidates: binding || humanEndedAt ? [] : candidates(board),
+        ...(humanEndedAt ? { humanEndedAt, message: '这个会话绑定的执行已由人在看板结束；只读上下文仍可查看，后续工作请使用新的宿主会话。' } : {}),
+      };
     },
 
     async attach(request) {
@@ -377,6 +402,7 @@ export function openAgentService({ store }) {
         if (replay) return { result: structuredClone(replay) };
         assertExpectedRevision(request.expectedRevision, board.revision);
         let binding = findBinding(board, session);
+        assertSessionNotHumanEnded(board, session, binding);
         const hasTarget = request.projectId !== undefined || request.nodeId !== undefined || create !== undefined;
         const requestedNode = request.nodeId === undefined ? null : nodeById(board, requiredText(request.nodeId, '节点 ID', 100));
         const requestedProjectId = request.projectId ?? requestedNode?.projectId;
@@ -479,6 +505,11 @@ export function openAgentService({ store }) {
       const session = normalizeSession(request.session);
       const board = await store.read();
       const binding = findBinding(board, session);
+      const tombstone = findHumanEndedSession(board, session);
+      if (!binding && tombstone) {
+        const message = '这个会话绑定的执行已由人在看板结束，原工作上下文已不存在；后续工作请使用新的宿主会话重新关联。';
+        return { boardInstanceId: store.boardInstanceId, revision: board.revision, binding: null, humanEndedAt: tombstone.endedAt, message, markdown: `# 会话已由人在看板结束\n\n${message}` };
+      }
       if (!binding) throw new BoardError('这个会话尚未关联项目。', 404, { code: 'binding-not-found', candidates: candidates(board) });
       let nodeId = request.nodeId;
       let projectId = request.projectId;
@@ -492,7 +523,8 @@ export function openAgentService({ store }) {
       } else if (binding.nodeId) nodeId = binding.nodeId;
       else projectId = binding.projectId;
       const context = buildContext(board, { node: nodeId, project: projectId, attachmentPath: attachment => store.attachmentPath(attachment) });
-      return { boardInstanceId: store.boardInstanceId, ...context, binding: publicBinding(binding) };
+      const humanEndedAt = tombstone?.endedAt ?? binding.humanEndedAt;
+      return { boardInstanceId: store.boardInstanceId, ...context, binding: publicBinding(binding), ...(humanEndedAt ? { humanEndedAt, message: '这个会话绑定的执行已由人在看板结束；当前内容仅供读取，后续工作请使用新的宿主会话。' } : {}) };
     },
 
     async change(request) {
@@ -509,6 +541,7 @@ export function openAgentService({ store }) {
           ? currentDeliveryObstacle(board, binding, request.change)
           : null;
         assertExpectedRevision(request.expectedRevision, board.revision, false, obstacle ? { currentObstacle: obstacle } : undefined);
+        assertSessionNotHumanEnded(board, session, binding);
         if (!binding) throw new BoardError('这个会话尚未关联项目。', 404, { code: 'binding-not-found', candidates: candidates(board) });
         ensureBindingScope(board, binding, session, request.change);
         const next = applyChange(board, request.change.type === 'node.start' ? prepareAgentChange(request.change) : request.change);
@@ -552,6 +585,7 @@ export function openAgentService({ store }) {
         if (replay) return { result: structuredClone(replay) };
         assertExpectedRevision(request.expectedRevision, board.revision);
         let binding = findBinding(board, session);
+        assertSessionNotHumanEnded(board, session, binding);
         if (!binding) throw new BoardError('这个会话尚未关联项目。', 404, { code: 'binding-not-found', candidates: candidates(board) });
         if (!binding.recording) throw new BoardError('这个会话已停用工作记录。', 403, { code: 'recording-disabled' });
         const node = nodeById(board, nodeId);

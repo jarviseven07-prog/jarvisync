@@ -4,9 +4,10 @@
 .connection-eyebrow { display: flex; gap: 7px; align-items: center; color: var(--teal); font-size: 12px; }
 .connection-header h2 { font: 600 28px/1.4 var(--font-display); margin: 9px 0 0; }
 .connection-intro { color: var(--muted); font-size: 14px; line-height: 1.8; margin: 12px 0 22px; }
-.connection-hosts { display: grid; grid-template-columns: repeat(4,1fr); gap: 7px; margin-bottom: 25px; }
-.connection-hosts button { min-height: 42px; padding: 9px 7px; display: flex; align-items: center; justify-content: center; gap: 5px; border: 1px solid var(--line); border-radius: 4px; background: transparent; font-size: 13px; }
-.connection-hosts button.is-selected { color: var(--teal); border-color: var(--teal); background: color-mix(in srgb,var(--teal) 7%,var(--paper)); }
+.connection-host-picker { display: block; margin: 0 0 8px; }
+.connection-host-picker > span { display: block; margin-bottom: 7px; font-size: 13px; font-weight: 600; }
+.connection-host-picker select { width: 100%; min-height: 42px; padding: 9px 10px; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 4px; font-size: 14px; }
+.connection-host-description { margin: 0 0 22px; color: var(--muted); font-size: 12px; line-height: 1.8; }
 .connection-scope { border: 0; padding: 0; margin: 0; }
 .connection-scope legend { font-weight: 600; font-size: 15px; margin-bottom: 13px; }
 .connection-scope label { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 15px; cursor: pointer; }
@@ -49,7 +50,6 @@
   .connection-backdrop { padding: 12px; }
   .connection-dialog { padding: 20px 18px 14px; max-height: calc(100dvh - 24px); }
   .connection-header h2 { font-size: 25px; }
-  .connection-hosts { grid-template-columns: repeat(2,1fr); gap: 6px; margin-bottom: 20px; }
   .connection-steps li { gap: 10px; }
   .connection-link { margin-left: 0; display: flex; }
   .agent-connect-button { padding: 7px; }

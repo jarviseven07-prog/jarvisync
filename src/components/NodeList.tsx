@@ -31,7 +31,7 @@ export function NodeList({ board, nodes, edges, selectedNodeId, onSelectNode }: 
             <span className="list-node-main">
               <span className="list-node-title"><NodeNumber value={node.nodeNumber} />{node.title}{node.archived && <em>已归档</em>}</span>
               <span className="list-node-copy">{nodeSummary(node)}</span>
-              <span className="list-node-copy">{nodeExecutionLabel(node) ? `${nodeExecutionLabel(node)} · ` : ''}{formatRecordTime(node.updatedAt)}{node.question?.trim() ? ' · 需要你' : ''}</span>
+              <span className="list-node-copy">{nodeExecutionLabel(node) ? `${nodeExecutionLabel(node)} · ` : ''}{formatRecordTime(node.updatedAt)}{phase.kind !== 'stopped' && node.question?.trim() ? ' · 需要你' : ''}</span>
               <span className="list-node-relations">
                 {inputs.length > 0 && <span title="当前任务依赖的任务"><ArrowUpLeft size={13} /> 前置任务：{inputs.map((item) => item.title).join('、')}</span>}
                 {outputs.length > 0 && <span title="依赖当前任务的任务"><ArrowDownRight size={13} /> 后续任务：{outputs.map((item) => item.title).join('、')}</span>}

@@ -10,6 +10,7 @@ import {
   PanelRightClose,
   Settings2,
   Link2,
+  Square,
 } from 'lucide-react';
 import type { HumanInput, HumanInputKind, Project, WorkEdge, WorkNode } from '../types';
 import { executionLabel, nodeExecutionLabel, formatRecordTime, inputSourceLabel, isHttpLink, latestDelivery, overviewFor, phaseFor } from '../collaboration-view';
@@ -35,6 +36,7 @@ interface InspectorProps {
   onSelectNode: (id: string) => void;
   onSubmitInput: (kind: HumanInputKind, body: string, files: File[]) => Promise<boolean>;
   onDraftChange: (dirty: boolean) => void;
+  onForceStopNode: (id: string) => void;
 }
 
 const kindOptions: Array<{ value: HumanInputKind; label: string }> = [
@@ -109,13 +111,14 @@ function DeliveryRecord({ delivery, nodeTitle, current = true }: { delivery: Del
 
 function ExecutionRecord({ execution }: { execution: Execution }) {
   const state = execution.endedAt
-    ? (execution.outcome === 'delivered' ? '已交付' : '已停止')
+    ? (execution.outcome === 'delivered' ? '已交付' : execution.humanEnded ? '人工已结束' : '已停止')
     : '执行中';
   return (
     <li className="execution-record">
       <b>{state}</b>
       <code>{execution.ref}</code>
       <p>{executionLabel(execution) ? `${executionLabel(execution)} · ` : ''}开始 {formatRecordTime(execution.startedAt)}</p>
+      {execution.humanEnded && <p>由你在看板结束 · {formatRecordTime(execution.endedAt!)}。旧会话已停止写回。</p>}
       {execution.stoppedReason && <ReadableText text={`停止原因：${execution.stoppedReason}${execution.stopConfirmation ? `（${execution.stopConfirmation === 'host-observed' ? '宿主已报告中断' : '用户已确认停止'}）` : ''}`} />}
     </li>
   );
@@ -132,6 +135,7 @@ export function Inspector({
   onSelectNode,
   onSubmitInput,
   onDraftChange,
+  onForceStopNode,
 }: InspectorProps) {
   const [kind, setKind] = useState<HumanInputKind>('feedback');
   const [body, setBody] = useState('');
@@ -183,7 +187,7 @@ export function Inspector({
     { label: '下一步', value: node.status === 'done' ? '' : node.next },
     { label: '目标', value: node.goal },
     { label: '决定', value: node.decisions },
-    { label: '需要你回答', value: node.question ?? '' },
+    { label: phase?.kind === 'stopped' ? '结束时的问题' : '需要你回答', value: node.question ?? '' },
   ].filter((field) => field.value.trim()) : [];
   const relationCount = inputs.length + outputs.length;
   const projectConversationRef = project.conversationRef?.trim() ?? '';
@@ -346,6 +350,10 @@ export function Inspector({
           </>
         )}
       </section>
+
+      {node && !project.archived && (node.executions ?? []).some(run => run.endedAt === undefined) && (
+        <div className="inspector-stop-action"><button className="quiet-button" type="button" disabled={busy} onClick={() => onForceStopNode(node.id)}><Square size={13} /> 强制结束任务…</button></div>
+      )}
 
       {!node && overview.deliveries.length > 0 && (
         <section className="inspector-section overview-deliveries" aria-labelledby="project-deliveries-heading">

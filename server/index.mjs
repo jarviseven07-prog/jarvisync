@@ -149,14 +149,18 @@ export async function startServer({ port = Number(process.env.PORT || 4317), dat
         if (action === 'operation') return json(res, { outcome: await agents.operation(serviceBody) });
         if (['attach', 'change', 'takeover'].includes(action) && body.session?.sessionId && profile.sessions[digest(body.session.sessionId)]?.interrupted) throw new BoardError('用户已中断此会话，迟到写回已停止。等待用户下一次正常请求后再核对。', 409, { code: 'session-interrupted' });
         if (profile.scope === 'project') {
-          const project = (await store.read()).projects.find(p => p.id === profile.projectId && !p.archived);
-          if (!project) throw new BoardError('已选项目不存在或已归档，请在看板“接入我的 Agent”中修改记录范围。', 409, { code: 'connection-scope-missing' });
-          if (body.create || body.projectId && body.projectId !== profile.projectId) throw new BoardError('此接入仅记录已选项目。', 403);
-          const current = await agents.discover({ boardInstanceId: store.boardInstanceId, session: body.session });
-          const outside = current.binding && current.binding.projectId !== profile.projectId;
-          if (action === 'attach') { serviceBody.projectId = profile.projectId; if (outside) serviceBody.confirmRebind = true; }
-          else if (action === 'discover' && outside) return json(res, { ...current, binding: null, candidates: [{ projectId: project.id, projectNumber: project.projectNumber, title: project.title, summary: project.summary }], message: '记录范围已改变，请重新关联当前已选项目。' });
-          else if (outside) throw new BoardError('当前会话不属于已授权项目，请重新关联后继续。', 403);
+          const board = await store.read();
+          const project = board.projects.find(p => p.id === profile.projectId && !p.archived);
+          const humanEndedSession = (board.humanEndedSessions ?? []).some(item => item.host === body.session?.host && item.profileId === body.session?.profileId && item.sessionId === body.session?.sessionId);
+          if (!project && !humanEndedSession) throw new BoardError('已选项目不存在或已归档，请在看板“接入我的 Agent”中修改记录范围。', 409, { code: 'connection-scope-missing' });
+          if (project) {
+            if (body.create || body.projectId && body.projectId !== profile.projectId) throw new BoardError('此接入仅记录已选项目。', 403);
+            const current = await agents.discover({ boardInstanceId: store.boardInstanceId, session: body.session });
+            const outside = current.binding && current.binding.projectId !== profile.projectId;
+            if (action === 'attach') { serviceBody.projectId = profile.projectId; if (outside) serviceBody.confirmRebind = true; }
+            else if (action === 'discover' && outside) return json(res, { ...current, binding: null, candidates: [{ projectId: project.id, projectNumber: project.projectNumber, title: project.title, summary: project.summary }], message: '记录范围已改变，请重新关联当前已选项目。' });
+            else if (outside) throw new BoardError('当前会话不属于已授权项目，请重新关联后继续。', 403);
+          }
         }
         if (action === 'takeover' && body.confirmation === 'host-observed') {
           const board = await store.read();

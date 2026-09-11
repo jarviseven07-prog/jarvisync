@@ -12,11 +12,17 @@ export function dependencyState(board, node) {
   return { ready: Boolean(project && !project.archived && !node.archived && waitingIds.length === 0), waitingIds };
 }
 
+export function isHumanEnded(node) {
+  const latest = node.executions?.at(-1);
+  return node.status === 'blocked' && latest?.humanEnded === true && Boolean(latest.endedAt) && latest.outcome === 'stopped';
+}
+
 export function nodePhase(board, node) {
   const project = board.projects.find(item => item.id === node.projectId);
   if (!project || project.archived || node.archived) return { kind: 'archived', label: '已归档' };
   if (node.status === 'idea') return { kind: 'idea', label: '想法' };
   if (node.status === 'done') return { kind: 'done', label: '已完成' };
+  if (isHumanEnded(node)) return { kind: 'stopped', label: '人工已结束' };
   if (node.status === 'blocked') return { kind: 'blocked', label: '受阻' };
   if (node.status === 'doing') {
     const execution = node.executions?.at(-1);
@@ -38,12 +44,13 @@ export function projectOverview(board, projectId) {
     if (phase === 'running' || phase === 'recorded') result.doingIds.push(node.id);
     if (phase === 'ready') result.readyIds.push(node.id);
     if (phase === 'waiting') result.waitingIds.push(node.id);
-    if (phase === 'blocked' || node.question?.trim()) result.attentionNodeIds.push(node.id);
+    if (phase !== 'stopped' && (phase === 'blocked' || node.question?.trim())) result.attentionNodeIds.push(node.id);
     const delivery = node.deliveries?.at(-1);
     if (phase === 'done' && delivery) result.deliveries.push({ nodeId: node.id, nodeTitle: node.title, delivery });
   }
   for (const input of board.humanInputs ?? []) {
     if (input.projectId !== projectId || (input.nodeId && !nodes.some(node => node.id === input.nodeId))) continue;
+    if (input.nodeId && nodes.some(node => node.id === input.nodeId && isHumanEnded(node))) continue;
     if (input.responses?.at(-1)?.disposition === 'needs-clarification') result.clarificationInputIds.push(input.id);
   }
   result.deliveries.sort((a, b) => Number(b.delivery.final) - Number(a.delivery.final)

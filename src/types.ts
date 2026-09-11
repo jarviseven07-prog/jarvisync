@@ -28,6 +28,7 @@ export interface Execution {
   startedAt: string;
   endedAt?: string;
   outcome?: 'delivered' | 'stopped';
+  humanEnded?: boolean;
   stoppedReason?: string;
   stopConfirmation?: 'host-observed' | 'user-confirmed';
   stoppedByRunId?: string;
@@ -92,7 +93,7 @@ export interface HumanInput {
   source?: { ref: string; recordedBy: string };
   responses?: InputResponse[];
 }
-export interface Board { schemaVersion: 1; revision: number; nextProjectNumber: number; projects: Project[]; projectGroups?: ProjectGroup[]; nodes: WorkNode[]; edges: WorkEdge[]; humanInputs?: HumanInput[] }
+export interface Board { schemaVersion: 1; revision: number; nextProjectNumber: number; projects: Project[]; projectGroups?: ProjectGroup[]; nodes: WorkNode[]; edges: WorkEdge[]; humanInputs?: HumanInput[]; humanEndedSessions?: Array<{ host: string; profileId: string; sessionId: string; endedAt: string }> }
 export type NodePatch = Partial<Pick<WorkNode, 'title' | 'status' | 'owner' | 'model' | 'goal' | 'progress' | 'next' | 'decisions' | 'links' | 'position' | 'archived' | 'question'>>;
 export type Change =
   | { type: 'project.create'; title: string; summary?: string; conversationRef?: string; coordinator?: string }
@@ -110,6 +111,8 @@ export type Change =
   | { type: 'feedback.transcribe'; projectId: string; nodeId?: string; kind: HumanInputKind; body: string; sourceRef: string; recordedBy: string }
   | { type: 'feedback.respond'; id: string; body: string; owner: string; disposition: ResponseDisposition; affectedNodeIds?: string[] };
 export type HumanChange =
+  | { type: 'project.force-stop'; id: string; executions: Array<{ nodeId: string; runId: string }> }
+  | { type: 'node.force-stop'; id: string; runId: string }
   | { type: 'project.archive'; id: string; archived: boolean }
   | { type: 'project.remove'; id: string }
   | { type: 'human.input.add'; projectId: string; nodeId?: string; kind: HumanInputKind; body: string }

@@ -226,6 +226,10 @@ button:disabled { cursor: not-allowed; opacity: .52; }
 .project-menu-popover .project-delete-action { margin-top: 8px; border-top: 1px solid var(--line); border-radius: 0; padding-top: 10px; }
 .delete-project-dialog { width: min(420px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 24px; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 5px; box-shadow: 0 18px 70px rgba(0,0,0,.25); }
 .delete-project-dialog::backdrop { background: rgba(25,23,20,.4); }
+.force-stop-dialog p + p { margin-top: 10px; color: var(--muted); }
+.force-stop-tasks { max-height: 160px; overflow: auto; padding-left: 20px; font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }
+.inspector-stop-action { padding: 0 23px 16px; }
+.inspector-stop-action button { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
 .delete-project-dialog h2 { margin: 0 0 12px; font-family: var(--font-display); font-size: 22px; line-height: 1.5; overflow-wrap: anywhere; }
 .delete-project-dialog p { margin: 0; font-size: 13px; line-height: 1.8; }
 .delete-project-dialog .delete-project-error { margin-top: 12px; color: var(--danger); }
@@ -551,6 +555,7 @@ html[data-theme='dark'] .project-overview-trigger:hover {
 :is(.flow-node, .list-node).phase-waiting { --phase-color: #999086; --phase-text: #655f57; border-left-color: var(--phase-color); }
 :is(.flow-node, .list-node).phase-done { --phase-color: var(--done); --phase-text: #4d7066; border-left-color: var(--phase-color); }
 :is(.flow-node, .list-node).phase-blocked { --phase-color: var(--orange); --phase-text: #805826; border-left-color: var(--phase-color); }
+:is(.flow-node, .list-node).phase-stopped { --phase-color: #aaa093; --phase-text: #71685d; border-left-color: var(--phase-color); background-color: #f6f3ed; }
 :is(.flow-node, .list-node).phase-idea { --phase-color: #a87972; --phase-text: #78534c; border-left-color: var(--phase-color); }
 :is(.flow-node, .list-node).phase-archived { border-left-color: var(--phase-color); }
 :is(.flow-node, .list-node) :is(.node-phase-label, .list-node-status) { color: var(--phase-text); }
@@ -858,6 +863,7 @@ html[data-theme='dark'] :is(.flow-node, .list-node).phase-ready { --phase-color:
 html[data-theme='dark'] :is(.flow-node, .list-node).phase-waiting { --phase-color: #918a80; --phase-text: #bfb5a9; border-left-color: var(--phase-color); }
 html[data-theme='dark'] :is(.flow-node, .list-node).phase-done { --phase-color: var(--done); --phase-text: #a3beb6; border-left-color: var(--phase-color); }
 html[data-theme='dark'] :is(.flow-node, .list-node).phase-blocked { --phase-color: var(--orange); --phase-text: #dec096; border-left-color: var(--phase-color); }
+html[data-theme='dark'] :is(.flow-node, .list-node).phase-stopped { --phase-color: #8a8175; --phase-text: #c5bbad; border-left-color: var(--phase-color); background-color: #2c2a26; }
 html[data-theme='dark'] :is(.flow-node, .list-node).phase-idea { --phase-color: #b98178; --phase-text: #dda298; border-left-color: var(--phase-color); }
 html[data-theme='dark'] :is(.flow-node, .list-node).phase-archived { --phase-color: #918a80; --phase-text: #bfb5a9; border-left-color: var(--phase-color); }
 html[data-theme='dark'] .flow-node header span,

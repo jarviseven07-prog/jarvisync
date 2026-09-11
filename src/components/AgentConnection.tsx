@@ -12,6 +12,12 @@ interface Profile {
 }
 interface Status { boardInstanceId: string; hosts: Array<{ host: string; name: string; available: boolean }>; profiles: Profile[] }
 const labels: Record<string, string> = { codex: 'Codex', 'claude-code': 'Claude Code', hermes: 'Hermes', mcp: '其他 Agent' };
+const hostDescriptions: Record<string, string> = {
+  codex: '通过 Codex 插件市场安装；安装后还要在 /hooks 核对并信任 JarviSync。',
+  'claude-code': '通过 Claude Code 插件市场安装。它没有可用的 Interrupt Hook，用户中断不能全部自动回传。',
+  hermes: '复制并启用 Hermes 原生插件，同时写入它的 MCP 连接配置。',
+  mcp: '导入一份本机 MCP 配置。它提供相同工具，但没有宿主的自动会话检查。',
+};
 async function api<T>(action = '', body?: object): Promise<T> {
   const response = await fetch(`/api/onboarding${action ? `/${action}` : ''}`, body ? {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'X-JarviSync-UI': '1' }, body: JSON.stringify(body),
@@ -71,9 +77,9 @@ export function AgentConnection({ projects, activeProjectId, onClose }: { projec
   return <div className="connection-backdrop">
     <section className="connection-dialog" role="dialog" aria-modal="true" aria-labelledby="connection-title" ref={modal}>
       <header className="connection-header"><div><span className="connection-eyebrow"><Plug size={14} />从你的对话继续</span><h2 id="connection-title">接入我的 Agent</h2></div><button className="icon-button" ref={closeButton} onClick={onClose} aria-label="关闭接入窗口"><X size={20}/></button></header>
-      <p className="connection-intro">沿用你已有的 Agent 和账号。完成一次接入后，在对话里交办工作，这里保留进展和成果。</p>
-      <div className="connection-hosts" aria-label="选择 Agent">{Object.entries(labels).map(([key,label]) => <button key={key} className={host === key ? 'is-selected' : ''} aria-pressed={host === key} onClick={() => { setHost(key); setError(''); setCopied(false); }} disabled={busy}>{label}{status?.profiles.find(p => p.host === key)?.verification.readback && <Check size={14}/>}</button>)}</div>
-      {host === 'claude-code' && <p className="connection-note">Claude Code 当前无法把所有用户中断通知看板。需要立即阻止后续写回时，请在这里停用此接入。</p>}
+      <p className="connection-intro">沿用你已有的 Agent 和账号。所有接入都使用本机 MCP 连接，安装步骤因宿主而异。选好后按下方说明完成接入。</p>
+      <label className="connection-host-picker"><span>选择使用的 Agent</span><select aria-label="选择使用的 Agent" value={host} onChange={event => { setHost(event.target.value); setError(''); setCopied(false); }} disabled={busy}>{Object.entries(labels).map(([key, label]) => <option key={key} value={key}>{label}{status?.profiles.find(profile => profile.host === key)?.verification.readback ? '（已验证）' : ''}</option>)}</select></label>
+      <p className="connection-host-description">{hostDescriptions[host]}</p>
       {error && <p className="connection-error" role="alert">{error}</p>}
       {!status ? <p className="connection-loading"><LoaderCircle className="spin" size={17}/>正在读取本机接入状态…</p> : !profile ? <>
         <fieldset className="connection-scope"><legend>哪些工作记到看板</legend>

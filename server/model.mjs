@@ -272,6 +272,19 @@ function ensureProjectCanArchive(board, project) {
 function ensureNodeCanArchive(node) {
   if (activeExecution(node)) throw new BoardError('节点仍有实际执行，需先停止并记录。');
 }
+function humanForceStop(board, targets, at) {
+  for (const { node, execution } of targets) {
+    Object.assign(execution, { endedAt: at, outcome: 'stopped', humanEnded: true });
+    Object.assign(node, { status: 'blocked', updatedAt: at });
+    for (const binding of board.agentBindings ?? []) {
+      if (binding.nodeId !== node.id || binding.runId !== execution.id) continue;
+      Object.assign(binding, { humanEndedAt: at, updatedAt: at });
+      board.humanEndedSessions ??= [];
+      const recorded = board.humanEndedSessions.some(item => item.host === binding.host && item.profileId === binding.profileId && item.sessionId === binding.sessionId);
+      if (!recorded) board.humanEndedSessions.push({ host: binding.host, profileId: binding.profileId, sessionId: binding.sessionId, endedAt: at });
+    }
+  }
+}
 function normalizedGroupTitle(value) { return value.normalize('NFKC').toLocaleLowerCase(); }
 function uniqueGroupTitle(board, value, exceptId) {
   const title = text(value, '分组名称', 120, true);
@@ -596,6 +609,33 @@ export function applyHumanChange(current, change, requestedAttachments = []) {
       archivedProject.archived = bool(change.archived);
       break;
     }
+    case 'project.force-stop': {
+      keys(change, ['type', 'id', 'executions']);
+      project = find(board.projects, text(change.id, '项目 ID', 100, true), '项目');
+      if (!Array.isArray(change.executions) || change.executions.length > board.nodes.length) throw new BoardError('项目执行快照格式不正确。');
+      const requested = new Set();
+      for (const item of change.executions) {
+        keys(item, ['nodeId', 'runId']);
+        const nodeId = text(item.nodeId, '节点 ID', 100, true);
+        const runId = text(item.runId, '运行 ID', 100, true);
+        const key = `${nodeId}\0${runId}`;
+        if (requested.has(key)) throw new BoardError('项目执行快照不能包含重复运行。');
+        requested.add(key);
+      }
+      const targets = board.nodes
+        .filter(node => node.projectId === project.id)
+        .flatMap(node => {
+          const execution = activeExecution(node);
+          return execution ? [{ node, execution }] : [];
+        });
+      const currentExecutions = targets.map(({ node, execution }) => ({ nodeId: node.id, runId: execution.id }));
+      if (!targets.length) throw new BoardError('项目当前没有可结束的执行。', 409, { code: 'no-active-execution', currentExecutions });
+      if (requested.size !== targets.length || targets.some(({ node, execution }) => !requested.has(`${node.id}\0${execution.id}`))) {
+        throw new BoardError('项目执行已变化，请刷新后再结束。', 409, { code: 'force-stop-snapshot-conflict', currentExecutions });
+      }
+      humanForceStop(board, targets, at);
+      break;
+    }
     case 'project.remove': {
       keys(change, ['type', 'id']);
       const removed = find(board.projects, text(change.id, '项目 ID', 100, true), '项目');
@@ -616,6 +656,17 @@ export function applyHumanChange(current, change, requestedAttachments = []) {
         };
       }
       if (board.agentBindings) board.agentBindings = board.agentBindings.filter(item => item.projectId !== removed.id);
+      break;
+    }
+    case 'node.force-stop': {
+      keys(change, ['type', 'id', 'runId']);
+      const node = find(board.nodes, text(change.id, '节点 ID', 100, true), '节点');
+      project = find(board.projects, node.projectId, '项目');
+      const runId = text(change.runId, '运行 ID', 100, true);
+      const execution = activeExecution(node);
+      if (!execution) throw new BoardError('节点当前没有可结束的执行。', 409, { code: 'no-active-execution', currentRunId: null });
+      if (execution.id !== runId) throw new BoardError('节点执行已变化，请刷新后再结束。', 409, { code: 'force-stop-run-conflict', currentRunId: execution.id });
+      humanForceStop(board, [{ node, execution }], at);
       break;
     }
     case 'project.group.create': {
@@ -677,7 +728,7 @@ export function applyHumanChange(current, change, requestedAttachments = []) {
 }
 
 function validateExecution(execution, node, nodeIds, runIds) {
-  keys(execution, ['id', 'ref', 'owner', 'model', 'modelSource', 'startedAt', 'endedAt', 'outcome', 'inputNodeIds', 'stoppedReason', 'stopConfirmation', 'stoppedByRunId']);
+  keys(execution, ['id', 'ref', 'owner', 'model', 'modelSource', 'startedAt', 'endedAt', 'outcome', 'inputNodeIds', 'stoppedReason', 'stopConfirmation', 'stoppedByRunId', 'humanEnded']);
   const id = text(execution.id, '运行 ID', 100, true);
   if (runIds.has(id)) throw new BoardError('项目数据包含重复运行 ID。', 500);
   runIds.add(id);
@@ -697,6 +748,9 @@ function validateExecution(execution, node, nodeIds, runIds) {
   if (hasEndedAt) timestamp(execution.endedAt, '实际结束');
   if (hasEndedAt && Date.parse(execution.endedAt) < Date.parse(execution.startedAt)) throw new BoardError('实际结束不能早于开始。', 500);
   if (hasOutcome && !executionOutcomes.has(execution.outcome)) throw new BoardError('执行结果不正确。', 500);
+  if (execution.humanEnded !== undefined) {
+    if (execution.humanEnded !== true || execution.outcome !== 'stopped' || !hasEndedAt) throw new BoardError('人工结束标记只能属于已停止运行。', 500);
+  }
   const takeoverFields = ['stoppedReason', 'stopConfirmation', 'stoppedByRunId'];
   const takeoverFieldCount = takeoverFields.filter(key => execution[key] !== undefined).length;
   if (takeoverFieldCount && takeoverFieldCount !== takeoverFields.length) throw new BoardError('接管停止记录必须完整。', 500);
@@ -745,7 +799,7 @@ function validateResponse(response, project, nodeIds, responseIds) {
 
 export function validateBoard(board) {
   object(board, '项目数据');
-  if (board.schemaVersion !== 1 || !Number.isSafeInteger(board.revision) || board.revision < 0 || !Number.isSafeInteger(board.nextProjectNumber) || board.nextProjectNumber < 1 || !Array.isArray(board.projects) || (board.projectGroups !== undefined && !Array.isArray(board.projectGroups)) || !Array.isArray(board.nodes) || !Array.isArray(board.edges) || (board.humanInputs !== undefined && !Array.isArray(board.humanInputs)) || (board.agentBindings !== undefined && !Array.isArray(board.agentBindings)) || (board.agentOperations !== undefined && (!Array.isArray(board.agentOperations) || board.agentOperations.length > agentOperationLimit)) || (board.agentOperationReplayFloorRevision !== undefined && (!Number.isSafeInteger(board.agentOperationReplayFloorRevision) || board.agentOperationReplayFloorRevision < 0 || board.agentOperationReplayFloorRevision > board.revision))) throw new BoardError('项目数据格式不正确，未覆盖原文件。', 500);
+  if (board.schemaVersion !== 1 || !Number.isSafeInteger(board.revision) || board.revision < 0 || !Number.isSafeInteger(board.nextProjectNumber) || board.nextProjectNumber < 1 || !Array.isArray(board.projects) || (board.projectGroups !== undefined && !Array.isArray(board.projectGroups)) || !Array.isArray(board.nodes) || !Array.isArray(board.edges) || (board.humanInputs !== undefined && !Array.isArray(board.humanInputs)) || (board.agentBindings !== undefined && !Array.isArray(board.agentBindings)) || (board.humanEndedSessions !== undefined && (!Array.isArray(board.humanEndedSessions) || board.humanEndedSessions.length > 10000)) || (board.agentOperations !== undefined && (!Array.isArray(board.agentOperations) || board.agentOperations.length > agentOperationLimit)) || (board.agentOperationReplayFloorRevision !== undefined && (!Number.isSafeInteger(board.agentOperationReplayFloorRevision) || board.agentOperationReplayFloorRevision < 0 || board.agentOperationReplayFloorRevision > board.revision))) throw new BoardError('项目数据格式不正确，未覆盖原文件。', 500);
   const ids = new Set();
   for (const item of [...board.projects, ...(board.projectGroups ?? []), ...board.nodes, ...board.edges, ...(board.humanInputs ?? [])]) {
     if (!item || typeof item.id !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(item.id) || ids.has(item.id)) throw new BoardError('项目数据包含无效或重复 ID。', 500);
@@ -847,7 +901,7 @@ export function validateBoard(board) {
   const bindingIds = new Set();
   const sessionKeys = new Set();
   for (const binding of board.agentBindings ?? []) {
-    keys(binding, ['id', 'host', 'profileId', 'sessionId', 'projectId', 'nodeId', 'runId', 'recording', 'createdAt', 'updatedAt']);
+    keys(binding, ['id', 'host', 'profileId', 'sessionId', 'projectId', 'nodeId', 'runId', 'recording', 'createdAt', 'updatedAt', 'humanEndedAt']);
     const id = text(binding.id, '会话绑定 ID', 100, true);
     if (!/^b-[a-f0-9-]{36}$/i.test(id) || bindingIds.has(id)) throw new BoardError('项目数据包含无效或重复会话绑定 ID。', 500);
     bindingIds.add(id);
@@ -863,12 +917,29 @@ export function validateBoard(board) {
       node = find(board.nodes, binding.nodeId, '会话绑定节点');
       if (node.projectId !== project.id) throw new BoardError('会话绑定节点不属于绑定项目。', 500);
     }
+    let execution;
     if (binding.runId !== undefined) {
-      if (!node || !(node.executions ?? []).some(execution => execution.id === binding.runId)) throw new BoardError('会话绑定运行不属于绑定节点。', 500);
+      execution = node && (node.executions ?? []).find(item => item.id === binding.runId);
+      if (!execution) throw new BoardError('会话绑定运行不属于绑定节点。', 500);
+    }
+    if (binding.humanEndedAt !== undefined) {
+      timestamp(binding.humanEndedAt, '会话人工结束');
+      if (!execution?.humanEnded || binding.humanEndedAt !== execution.endedAt) throw new BoardError('会话人工结束标记没有关联对应运行。', 500);
     }
     if (typeof binding.recording !== 'boolean') throw new BoardError('会话记录范围格式不正确。', 500);
     timestamp(binding.createdAt, '会话绑定创建');
     timestamp(binding.updatedAt, '会话绑定更新');
+  }
+  const humanEndedSessionKeys = new Set();
+  for (const session of board.humanEndedSessions ?? []) {
+    keys(session, ['host', 'profileId', 'sessionId', 'endedAt']);
+    const host = text(session.host, '人工结束宿主', 120, true);
+    const profileId = text(session.profileId, '人工结束宿主配置 ID', 240, true);
+    const sessionId = text(session.sessionId, '人工结束宿主会话 ID', 400, true);
+    const sessionKey = `${host}\0${profileId}\0${sessionId}`;
+    if (humanEndedSessionKeys.has(sessionKey)) throw new BoardError('项目数据包含重复人工结束会话。', 500);
+    humanEndedSessionKeys.add(sessionKey);
+    timestamp(session.endedAt, '会话人工结束');
   }
   const operationIds = new Set();
   for (const operation of board.agentOperations ?? []) {
