@@ -23,6 +23,10 @@
   fill: var(--progress-edge-color);
 }
 
+.progress-edge.is-transitive .progress-edge__base {
+  stroke-dasharray: 5 5;
+}
+
 .progress-edge__relation {
   pointer-events: none;
   stroke: var(--red, #bd5345);

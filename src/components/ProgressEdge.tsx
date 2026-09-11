@@ -11,6 +11,7 @@ import './progress-edge.css';
 export type ProgressEdgeData = {
   progress: EdgeProgress;
   related?: boolean;
+  transitive?: boolean;
 } & Record<string, unknown>;
 
 export type ProgressFlowEdge = Edge<ProgressEdgeData, 'progress'>;
@@ -55,10 +56,12 @@ export function ProgressEdge({
     `progress-edge--${progress}`,
     selected ? 'is-selected' : '',
     related ? 'is-related' : '',
+    data?.transitive ? 'is-transitive' : '',
   ].filter(Boolean).join(' ');
 
   return (
     <g className={stateClasses} data-progress={progress}>
+      {data?.transitive && <title>跨级依赖：已有间接路径，直接输入仍保留。</title>}
       <defs aria-hidden="true">
         <marker
           id={markerId}

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Controls,
   Handle,
+  Panel,
   Position,
   ReactFlow,
   applyNodeChanges,
@@ -14,6 +15,7 @@ import type { WorkEdge, WorkNode } from '../types';
 import { nodeExecutionLabel, nodeSummary, formatRecordTime, phaseFor } from '../collaboration-view';
 import type { Board } from '../types';
 import { getEdgeProgress } from '../edge-progress';
+import { transitiveEdgeIds } from '../edge-visibility';
 import { ProgressEdge, type ProgressFlowEdge } from './ProgressEdge';
 import { NodeNumber } from './NodeNumber';
 
@@ -77,6 +79,7 @@ export function NodeCanvas({
   const flow = useRef<ReactFlowInstance<CanvasNode, ProgressFlowEdge> | null>(null);
   const localPositions = useRef(new Map<string, { x: number; y: number }>());
   const savedNodes = useRef(nodes);
+  const [showAllEdges, setShowAllEdges] = useState(false);
   savedNodes.current = nodes;
   const layoutSignature = nodes.map(node => node.id).sort().join('|');
   const relations = useMemo(() => {
@@ -121,9 +124,15 @@ export function NodeCanvas({
     };
   }, [layoutSignature, layoutFitRevision]);
 
+  const transitiveIds = useMemo(() => transitiveEdgeIds(nodes, edges), [nodes, edges]);
+  const drawnEdges = useMemo(() => edges.filter(edge => showAllEdges || !transitiveIds.has(edge.id)
+    || edge.id === selectedEdgeId || edge.source === selectedNodeId || edge.target === selectedNodeId),
+  [edges, showAllEdges, transitiveIds, selectedEdgeId, selectedNodeId]);
+  const hiddenEdgeCount = edges.length - drawnEdges.length;
+
   const flowEdges = useMemo<ProgressFlowEdge[]>(() => {
     const byId = new Map(nodes.map((node) => [node.id, node]));
-    return edges.map((edge) => {
+    return drawnEdges.map((edge) => {
       const source = byId.get(edge.source);
       const target = byId.get(edge.target);
       const progress = getEdgeProgress(source, target);
@@ -131,11 +140,11 @@ export function NodeCanvas({
         ...edge,
         type: 'progress',
         selected: edge.id === selectedEdgeId,
-        data: { progress, related: Boolean(selectedNodeId && (edge.source === selectedNodeId || edge.target === selectedNodeId)) },
-        ariaLabel: `${source?.title ?? edge.source} → ${target?.title ?? edge.target}，${progress === 'active' ? '进行中' : progress === 'complete' ? '已完成' : '依赖连接'}`,
+        data: { progress, transitive: transitiveIds.has(edge.id), related: Boolean(selectedNodeId && (edge.source === selectedNodeId || edge.target === selectedNodeId)) },
+        ariaLabel: `${source?.title ?? edge.source} → ${target?.title ?? edge.target}，${transitiveIds.has(edge.id) ? '跨级依赖，' : ''}${progress === 'active' ? '进行中' : progress === 'complete' ? '已完成' : '依赖连接'}`,
       };
     });
-  }, [nodes, edges, selectedEdgeId, selectedNodeId]);
+  }, [nodes, drawnEdges, transitiveIds, selectedEdgeId, selectedNodeId]);
 
   function changeNodes(changes: NodeChange<CanvasNode>[]) {
     const canvasChanges = changes.filter((change) => change.type === 'dimensions' || change.type === 'position');
@@ -200,6 +209,16 @@ export function NodeCanvas({
         fitViewOptions={{ padding: 0.22, maxZoom: 1 }}
         proOptions={{ hideAttribution: true }}
       >
+        {transitiveIds.size > 0 && <Panel position="top-right" className="canvas-relations" aria-label="连线显示">
+          <span className="canvas-relations__hint" aria-live="polite">
+            {showAllEdges ? '跨级连线以虚线显示' : hiddenEdgeCount > 0 ? `已收起 ${hiddenEdgeCount} 条跨级连线` : '当前关联连线已展开'}
+          </span>
+          <button type="button" aria-pressed={showAllEdges}
+            title="总览收起已有间接路径的跨级连线；选中节点展开直接关系，完整输入与输出见右侧详情。"
+            onClick={() => { onSelectEdge(null); setShowAllEdges(value => !value); }}>
+            {showAllEdges ? '简洁连线' : '全部连线'}
+          </button>
+        </Panel>}
         <Controls position="bottom-left" showInteractive={false} />
       </ReactFlow>
     </div>

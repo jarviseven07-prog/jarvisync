@@ -449,6 +449,31 @@ html[data-theme='dark'] .project-overview-trigger:hover {
 .node-canvas .react-flow__controls { overflow: hidden; background: #fffdfa; border: 1px solid #cec1b0; border-radius: 3px; box-shadow: 0 5px 16px rgba(70,53,34,.08); }
 .node-canvas .react-flow__controls-button { color: #514d47; background: #fffdfa; border-color: #e1d8cb; }
 .node-canvas .react-flow__controls-button:hover { background: #f2ece3; }
+.node-canvas .canvas-relations {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  max-width: calc(100% - 24px);
+  padding: 5px 7px 5px 11px;
+  color: var(--muted);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  box-shadow: 0 3px 12px rgba(50, 40, 30, .06);
+  font-size: 11px;
+}
+.canvas-relations button {
+  min-height: 28px;
+  padding: 3px 9px;
+  color: var(--teal);
+  background: transparent;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.canvas-relations button:hover { background: var(--paper-deep); }
 .flow-node {
   --phase-color: #999086;
   --phase-text: #655f57;
