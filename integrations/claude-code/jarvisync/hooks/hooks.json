@@ -1,9 +1,72 @@
 {
   "hooks": {
-    "SessionStart": [{ "matcher": "startup|resume|compact", "hooks": [{ "type": "command", "command": "\"__NODE_EXECUTABLE__\" \"__HOOK_SCRIPT__\" --connection \"__CONNECTION_FILE__\" --host claude-code", "timeout": 5 }] }],
-    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "\"__NODE_EXECUTABLE__\" \"__HOOK_SCRIPT__\" --connection \"__CONNECTION_FILE__\" --host claude-code", "timeout": 5 }] }],
-    "PreCompact": [{ "matcher": "manual|auto", "hooks": [{ "type": "command", "command": "\"__NODE_EXECUTABLE__\" \"__HOOK_SCRIPT__\" --connection \"__CONNECTION_FILE__\" --host claude-code", "timeout": 3 }] }],
-    "SubagentStart": [{ "hooks": [{ "type": "command", "command": "\"__NODE_EXECUTABLE__\" \"__HOOK_SCRIPT__\" --connection \"__CONNECTION_FILE__\" --host claude-code", "timeout": 5 }] }],
-    "Stop": [{ "hooks": [{ "type": "command", "command": "\"__NODE_EXECUTABLE__\" \"__HOOK_SCRIPT__\" --connection \"__CONNECTION_FILE__\" --host claude-code", "timeout": 5 }] }]
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"__NODE_EXECUTABLE__\" \"__HOOK_SCRIPT__\" --connection \"__CONNECTION_FILE__\" --host claude-code",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"__NODE_EXECUTABLE__\" \"__HOOK_SCRIPT__\" --connection \"__CONNECTION_FILE__\" --host claude-code",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "manual|auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"__NODE_EXECUTABLE__\" \"__HOOK_SCRIPT__\" --connection \"__CONNECTION_FILE__\" --host claude-code",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"__NODE_EXECUTABLE__\" \"__HOOK_SCRIPT__\" --connection \"__CONNECTION_FILE__\" --host claude-code",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"__NODE_EXECUTABLE__\" \"__HOOK_SCRIPT__\" --connection \"__CONNECTION_FILE__\" --host claude-code",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"__NODE_EXECUTABLE__\" \"__HOOK_SCRIPT__\" --connection \"__CONNECTION_FILE__\" --host claude-code",
+            "timeout": 3
+          }
+        ]
+      }
+    ]
   }
 }

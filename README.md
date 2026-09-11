@@ -13,7 +13,7 @@
 > Chinese. English localization is not done yet. This early release is tested
 > on Windows; macOS and Linux are not verified.
 
-[Download v0.1.0](https://github.com/jarviseven07-prog/jarvisync/releases/tag/v0.1.0) ·
+[Download v0.1.1](https://github.com/jarviseven07-prog/jarvisync/releases/tag/v0.1.1) ·
 [Watch the 30-second workflow demo](https://github.com/jarviseven07-prog/jarvisync/releases/download/v0.1.0/JarviSync-Workflow-30s.mp4)
 
 The video uses a reconstructed UI and a fictional example to illustrate the
@@ -70,8 +70,20 @@ oversell:
 
 ## Quick start
 
+Version 0.1.1 adds milestone reminders and atomic node/dependency creation.
+Agent-created nodes must declare their upstream nodes, or give an explicit
+reason for being independent. Existing graph relationships are preserved.
+At supported host events, an active run with no new progress for about ten
+minutes gets a prompt to review milestones; the agent still decides whether
+there are real facts to report. No progress or completion is fabricated.
+
+When upgrading, close the old app, back up its data directory, and extract the
+new ZIP into a separate directory. In **接入我的 Agent** (Connect my Agent),
+refresh the installed integration and reload it in the host so the new tools
+and hooks are loaded. Keep the backup if you need to return to an older version.
+
 **Windows x64 portable app:** download the desktop ZIP from
-[v0.1.0 Releases](https://github.com/jarviseven07-prog/jarvisync/releases/tag/v0.1.0),
+[v0.1.1 Releases](https://github.com/jarviseven07-prog/jarvisync/releases/tag/v0.1.1),
 extract the entire archive, and open `JarviSync.exe` inside. Keep the extracted
 files together. No separate Node.js installation is needed for the bundled app.
 
@@ -80,7 +92,7 @@ files together. No separate Node.js installation is needed for the bundled app.
 ```bash
 git clone https://github.com/jarviseven07-prog/jarvisync.git
 cd jarvisync
-git checkout v0.1.0
+git checkout v0.1.1
 npm ci
 npm run build
 ```

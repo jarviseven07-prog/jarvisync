@@ -1,6 +1,6 @@
 {
   "name": "jarvisync",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "本地 JarviSync 协作记录与接续插件模板。",
   "author": {
     "name": "JarviSync"

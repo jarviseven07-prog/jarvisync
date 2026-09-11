@@ -7,13 +7,18 @@ const string = description => ({ type: 'string', description });
 const session = { sessionId: string('本次宿主真实会话 ID，来自 JarviSync 会话入口；不得猜测或沿用其他会话。') };
 const write = { ...session, clientOperationId: string('本次请求唯一且稳定的 ID；响应未知时复用原 ID、版本、正文。409 后先读上下文，再用 jarvisync_resolve 核对原失败请求，不修改原 ID 对应的请求。'), expectedRevision: { type: 'integer', minimum: 0, description: '刚读取并核对的全局看板版本；其他项目的写入也可能使版本变化。' } };
 const schema = (properties, required) => ({ type: 'object', properties, required, additionalProperties: false });
-const nodePlan = { type: 'array', maxItems: 20, items: schema({ key: string('此批次稳定短标识'), title: string('可交付节点标题'), goal: string('目标'), next: string('下一步'), dependsOn: { type: 'array', items: { type: 'string' } } }, ['key', 'title']) };
+const dependencyProperties = { dependsOn: { type: 'array', maxItems: 20, uniqueItems: true, items: { type: 'string', minLength: 1 } }, independentReason: { type: 'string', minLength: 1, maxLength: 2000, pattern: '\\S', description: '仅无真实上游时填写独立原因；不得为排版而连线。' } };
+const dependencyChoice = [
+  { properties: { dependsOn: { minItems: 1 } }, not: { required: ['independentReason'] } },
+  { properties: { dependsOn: { maxItems: 0 } }, required: ['independentReason'] },
+];
+const nodePlan = { type: 'array', maxItems: 20, items: { ...schema({ key: string('此批次稳定短标识'), title: string('可交付节点标题'), goal: string('目标'), next: string('下一步'), ...dependencyProperties }, ['key', 'title', 'dependsOn']), oneOf: dependencyChoice } };
 const strings = { type: 'array', items: { type: 'string' } };
 const position = schema({ x: { type: 'number' }, y: { type: 'number' } }, ['x', 'y']);
 const choice = values => ({ type: 'string', enum: values });
 const variant = (type, properties, required) => schema({ type: { const: type, type: 'string' }, ...properties }, ['type', ...required]);
-const changeSchema = { description: '按 type 选择对应字段。node.create 的返回 saved.id 是新节点 ID；目标和下一步用 node.update.patch 设置。创建节点不会启动外部 Agent。', oneOf: [
-  variant('node.create', { projectId: string('当前项目 ID'), title: string('独立成果名称'), position }, ['projectId', 'title']),
+const changeSchema = { description: '按 type 选择对应字段。node.create 的返回 saved.id 是新节点 ID；目标和下一步用 node.update.patch 设置。创建节点与 dependsOn 连线原子保存；dependsOn 引用当前项目真实上游 ID，无上游必须说明 independentReason。创建节点不会启动外部 Agent。', oneOf: [
+  { ...variant('node.create', { projectId: string('当前项目 ID'), title: string('成果名称'), position, ...dependencyProperties }, ['projectId', 'title', 'dependsOn']), oneOf: dependencyChoice },
   variant('node.update', { id: string('节点 ID'), patch: schema({ title: string('标题'), goal: string('目标'), next: string('下一步'), decisions: string('已定事项'), question: string('待回答事项'), owner: string('计划执行者；不等于派发成功'), model: string('计划模型；不作为实际执行依据'), progress: string('未开始节点的说明；运行中用 progress 工具'), status: choice(['idea', 'todo', 'blocked']), links: strings, position, archived: { type: 'boolean' } }, []) }, ['id', 'patch']),
   variant('edge.create', { projectId: string('当前项目 ID'), source: string('上游节点 ID'), target: string('依赖上游的节点 ID') }, ['projectId', 'source', 'target']),
   variant('edge.remove', { id: string('连线 ID') }, ['id']),
@@ -65,7 +70,12 @@ function validate(value, definition, path = '参数') {
       else if (definition.additionalProperties === false) throw new Error(`${path} 包含不支持的参数 ${key}。`);
     }
   }
+  if (typeof value === 'string') {
+    if (definition.minLength !== undefined && value.length < definition.minLength || definition.maxLength !== undefined && value.length > definition.maxLength || definition.pattern && !new RegExp(definition.pattern).test(value)) throw new Error(`${path} 文本格式不正确。`);
+  }
   if (Array.isArray(value)) {
+    if (definition.minItems !== undefined && value.length < definition.minItems) throw new Error(`${path} 条目不足。`);
+    if (definition.uniqueItems && new Set(value).size !== value.length) throw new Error(`${path} 条目不得重复。`);
     if (definition.maxItems !== undefined && value.length > definition.maxItems) throw new Error(`${path} 条目过多。`);
     if (definition.items) value.forEach((item, index) => validate(item, definition.items, `${path}[${index}]`));
   }
@@ -122,7 +132,7 @@ export async function runMcp(config, { input = process.stdin, output = process.s
     const reply = result => send({ jsonrpc: '2.0', id: request.id, result });
     if (request.method === 'initialize') {
       initialized = true;
-      reply({ protocolVersion: ['2024-11-05','2025-03-26','2025-06-18','2025-11-25'].includes(request.params?.protocolVersion) ? request.params.protocolVersion : '2025-11-25', capabilities: { tools: {} }, serverInfo: { name: 'jarvisync', version: '0.2.0' }, instructions: 'JarviSync 本机协作：会话身份从宿主入口获取。明确交办的工作先发现并关联项目，再开始/记录/交付；普通问答和用户要求不记录的内容不建档。服务离线保留回执，用户中断立即尊重。工具连接不等于任务执行。' });
+      reply({ protocolVersion: ['2024-11-05','2025-03-26','2025-06-18','2025-11-25'].includes(request.params?.protocolVersion) ? request.params.protocolVersion : '2025-11-25', capabilities: { tools: {} }, serverInfo: { name: 'jarvisync', version: '0.1.1' }, instructions: 'JarviSync 本机协作：会话身份从宿主入口获取。明确交办的工作先发现并关联项目，再开始/记录/交付；普通问答和用户要求不记录的内容不建档。服务离线保留回执，用户中断立即尊重。工具连接不等于任务执行。' });
     } else if (request.method === 'ping') reply({});
     else if (!initialized) send({ jsonrpc: '2.0', id: request.id, error: { code: -32000, message: '请先初始化。' } });
     else if (request.method === 'tools/list') reply({ tools: toolDefinitions });

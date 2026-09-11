@@ -44,6 +44,7 @@ export interface Delivery {
   final: boolean;
 }
 export interface WorkNode {
+  independentReason?: string;
   id: string;
   nodeNumber: string;
   projectId: string;

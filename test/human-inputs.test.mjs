@@ -254,7 +254,7 @@ test('JarviSync CLI 可分别记录负责人和实际执行模型', async () => 
     const script = fileURLToPath(new URL('../scripts/agent.mjs', import.meta.url));
     const options = { env: { ...process.env, NODEBOARD_URL: app.url, JARVISYNC_CONNECTION: profile.configPath, JARVISYNC_SESSION_ID: 'human-inputs-cli-session' }, windowsHide: true, encoding: 'utf8' };
     const created = JSON.parse((await exec(process.execPath, [script, 'create-project', 'CLI 模型记录', '--expected-revision', String(initial.revision), '--operation-id', 'model-create-project'], options)).stdout);
-    const node = JSON.parse((await exec(process.execPath, [script, 'create-node', created.binding.projectId, '--title', '记录模型', '--expected-revision', String(created.revision), '--operation-id', 'model-create-node'], options)).stdout);
+    const node = JSON.parse((await exec(process.execPath, [script, 'create-node', created.binding.projectId, '--title', '记录模型', '--independent-reason', '独立验证实际模型记录。', '--expected-revision', String(created.revision), '--operation-id', 'model-create-node'], options)).stdout);
     const updated = await exec(process.execPath, [
       script,
       'update',

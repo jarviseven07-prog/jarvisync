@@ -1,3 +1,4 @@
+import { getProgressCheckpoint } from './progress-checkpoint.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { BoardError, agentOperationLimit, applyChange, buildContext, prepareAgentChange, validateBoard } from './model.mjs';
 
@@ -118,6 +119,7 @@ function compactBinding(binding) {
     createdAt: binding.createdAt,
     updatedAt: binding.updatedAt,
     ...(binding.humanEndedAt ? { humanEndedAt: binding.humanEndedAt } : {}),
+    ...(binding.progressCheckpoint ? { progressCheckpoint: structuredClone(binding.progressCheckpoint) } : {}),
   };
 }
 
@@ -244,6 +246,24 @@ function assertSessionNotHumanEnded(board, session, binding = findBinding(board,
   });
 }
 
+function validateDependencies(value) {
+  const { dependsOn, independentReason } = value;
+  if (!Array.isArray(dependsOn) || dependsOn.length > 20 || dependsOn.some(id => typeof id !== 'string' || !id.trim()) || new Set(dependsOn).size !== dependsOn.length) throw new BoardError('新节点必须显式提供 dependsOn，且依赖不得重复。');
+  if (dependsOn.length && independentReason !== undefined) throw new BoardError('有依赖的节点不能同时提供 independentReason。');
+  if (!dependsOn.length) return { dependsOn, independentReason: requiredText(independentReason, '独立原因 independentReason', 2000) };
+  return { dependsOn };
+}
+
+function createAgentNode(board, change) {
+  onlyKeys(change, ['type', 'projectId', 'title', 'position', 'dependsOn', 'independentReason'], '新节点');
+  const plan = validateDependencies(change);
+  let next = applyChange(board, { type: 'node.create', projectId: change.projectId, title: change.title, ...(change.position === undefined ? {} : { position: change.position }) });
+  const nodeId = next.nodes.at(-1).id;
+  if (plan.independentReason !== undefined) next.nodes.at(-1).independentReason = plan.independentReason;
+  for (const source of plan.dependsOn) next = applyChange(next, { type: 'edge.create', projectId: change.projectId, source, target: nodeId });
+  return next;
+}
+
 function validateCreate(value) {
   onlyKeys(value, ['title', 'summary', 'nodes'], '新项目');
   const title = requiredText(value.title, '项目名称', 120);
@@ -252,18 +272,17 @@ function validateCreate(value) {
   if (!Array.isArray(nodes) || nodes.length > 20) throw new BoardError('新项目最多可以一次建立 20 个节点。');
   const keys = new Set();
   const normalizedNodes = nodes.map(item => {
-    onlyKeys(item, ['key', 'title', 'goal', 'next', 'dependsOn'], '新节点');
+    onlyKeys(item, ['key', 'title', 'goal', 'next', 'dependsOn', 'independentReason'], '新节点');
     const key = requiredText(item.key, '节点 key', 100);
     if (!/^[a-zA-Z0-9_-]+$/.test(key) || keys.has(key)) throw new BoardError('节点 key 格式不正确或重复。');
     keys.add(key);
-    const dependsOn = item.dependsOn ?? [];
-    if (!Array.isArray(dependsOn) || dependsOn.length > 20 || dependsOn.some(dependency => typeof dependency !== 'string') || new Set(dependsOn).size !== dependsOn.length) throw new BoardError('节点依赖格式不正确。');
+    const plan = validateDependencies(item);
     return {
       key,
       title: requiredText(item.title, '节点标题', 160),
       goal: optionalText(item.goal, '节点目标'),
       next: optionalText(item.next, '节点下一步'),
-      dependsOn,
+      ...plan,
     };
   });
   for (const node of normalizedNodes) {
@@ -379,6 +398,7 @@ export function openAgentService({ store }) {
         boardInstanceId: store.boardInstanceId,
         revision: board.revision,
         binding: publicBinding(binding),
+        progressCheckpoint: getProgressCheckpoint(board, binding),
         candidates: binding || humanEndedAt ? [] : candidates(board),
         ...(humanEndedAt ? { humanEndedAt, message: '这个会话绑定的执行已由人在看板结束；只读上下文仍可查看，后续工作请使用新的宿主会话。' } : {}),
       };
@@ -393,13 +413,13 @@ export function openAgentService({ store }) {
       if (request.recording !== undefined && typeof request.recording !== 'boolean') throw new BoardError('记录开关格式不正确。');
       if (request.confirmRebind !== undefined && typeof request.confirmRebind !== 'boolean') throw new BoardError('重新关联确认格式不正确。');
       if (request.nodeKey !== undefined && request.create === undefined) throw new BoardError('nodeKey 只能用于本次新建的节点。');
-      const create = request.create === undefined ? undefined : validateCreate(request.create);
-      if (request.nodeKey !== undefined && !create.nodes.some(node => node.key === request.nodeKey)) throw new BoardError('nodeKey 不属于本次创建的节点。');
       const hash = requestHash('attach', request, session);
 
       return store.transact(board => {
         const replay = existingOperation(board, { id, kind: 'attach', hash, session, expectedRevision: request.expectedRevision });
         if (replay) return { result: structuredClone(replay) };
+        const create = request.create === undefined ? undefined : validateCreate(request.create);
+        if (request.nodeKey !== undefined && !create.nodes.some(node => node.key === request.nodeKey)) throw new BoardError('nodeKey 不属于本次创建的节点。');
         assertExpectedRevision(request.expectedRevision, board.revision);
         let binding = findBinding(board, session);
         assertSessionNotHumanEnded(board, session, binding);
@@ -442,6 +462,7 @@ export function openAgentService({ store }) {
           for (const item of create.nodes) {
             board = applyChange(board, { type: 'node.create', projectId, title: item.title });
             const createdNode = board.nodes.at(-1);
+            if (item.independentReason !== undefined) createdNode.independentReason = item.independentReason;
             nodeIdsByKey[item.key] = createdNode.id;
             const patch = {};
             if (item.goal !== undefined) patch.goal = item.goal;
@@ -479,6 +500,7 @@ export function openAgentService({ store }) {
             if (nodeId) binding.nodeId = nodeId;
             else delete binding.nodeId;
             delete binding.runId;
+            delete binding.progressCheckpoint;
           }
           if (request.recording !== undefined) binding.recording = request.recording;
           binding.updatedAt = at;
@@ -524,7 +546,7 @@ export function openAgentService({ store }) {
       else projectId = binding.projectId;
       const context = buildContext(board, { node: nodeId, project: projectId, attachmentPath: attachment => store.attachmentPath(attachment) });
       const humanEndedAt = tombstone?.endedAt ?? binding.humanEndedAt;
-      return { boardInstanceId: store.boardInstanceId, ...context, binding: publicBinding(binding), ...(humanEndedAt ? { humanEndedAt, message: '这个会话绑定的执行已由人在看板结束；当前内容仅供读取，后续工作请使用新的宿主会话。' } : {}) };
+      return { boardInstanceId: store.boardInstanceId, ...context, binding: publicBinding(binding), progressCheckpoint: getProgressCheckpoint(board, binding), ...(humanEndedAt ? { humanEndedAt, message: '这个会话绑定的执行已由人在看板结束；当前内容仅供读取，后续工作请使用新的宿主会话。' } : {}) };
     },
 
     async change(request) {
@@ -544,14 +566,22 @@ export function openAgentService({ store }) {
         assertSessionNotHumanEnded(board, session, binding);
         if (!binding) throw new BoardError('这个会话尚未关联项目。', 404, { code: 'binding-not-found', candidates: candidates(board) });
         ensureBindingScope(board, binding, session, request.change);
-        const next = applyChange(board, request.change.type === 'node.start' ? prepareAgentChange(request.change) : request.change);
+        const next = request.change.type === 'node.create' ? createAgentNode(board, request.change) : applyChange(board, request.change.type === 'node.start' ? prepareAgentChange(request.change) : request.change);
         binding = (next.agentBindings ?? []).find(item => item.id === binding.id);
         if (request.change.type === 'node.start') {
           const node = nodeById(next, request.change.id);
           const run = node.executions.at(-1);
           binding.nodeId = node.id;
           binding.runId = run.id;
+          binding.progressCheckpoint = { runId: run.id, at: run.startedAt };
           binding.updatedAt = new Date().toISOString();
+        }
+        if (request.change.type === 'node.run.update') {
+          const before = nodeById(board, request.change.id);
+          const saved = nodeById(next, request.change.id);
+          if (['progress', 'next', 'question', 'status'].some(key => saved[key] !== before[key])) {
+            binding.progressCheckpoint = { runId: binding.runId, at: new Date().toISOString() };
+          }
         }
         let outcome = {
           boardInstanceId: store.boardInstanceId,
@@ -612,6 +642,7 @@ export function openAgentService({ store }) {
         binding = (next.agentBindings ?? []).find(item => item.id === binding.id);
         binding.nodeId = savedNode.id;
         binding.runId = newRun.id;
+        binding.progressCheckpoint = { runId: newRun.id, at: newRun.startedAt };
         binding.updatedAt = newRun.startedAt;
         let outcome = {
           boardInstanceId: store.boardInstanceId,

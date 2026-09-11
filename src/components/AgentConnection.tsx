@@ -100,7 +100,7 @@ export function AgentConnection({ projects, activeProjectId, onClose }: { projec
         {profile.enabled ? <>
           <ol className="connection-steps">
             <li><span className="connection-step-index">1</span><div><h3>在 {labels[host]} 中启用</h3><p>{profile.message || (host === 'mcp' ? '在宿主的 MCP 导入入口选择下方配置文件。' : '点击安装后，接入包会添加到本机宿主；已有账号与其他配置保留。')}</p>
-              {host !== 'mcp' && <button className="primary-button compact" disabled={busy || !hostInfo?.available} onClick={() => void perform('install', { profileId: profile.id })}>{busy ? <LoaderCircle className="spin" size={14}/> : <Plug size={14}/>} {profile.installation === 'prepared' ? `安装到 ${labels[host]}` : '重新安装接入'}</button>}
+              <button className="primary-button compact" disabled={busy || host !== 'mcp' && !hostInfo?.available} onClick={() => void perform('install', { profileId: profile.id })}>{busy ? <LoaderCircle className="spin" size={14}/> : <Plug size={14}/>} {host === 'mcp' ? '更新接入配置' : profile.installation === 'prepared' ? `安装到 ${labels[host]}` : '更新接入'}</button>
               {host !== 'mcp' && !hostInfo?.available && <p className="connection-note">本机尚未找到 {labels[host]} 命令行。安装宿主后可回来继续。</p>}
               {host === 'codex' && profile.viewUrl && <a className="connection-link" href={profile.viewUrl}>在 Codex 查看接入包 <ExternalLink size={13}/></a>}
               {host === 'codex' && <p className="connection-note">安装后，在 Codex 的 /hooks 中核对并信任 JarviSync，再重新打开对话。</p>}

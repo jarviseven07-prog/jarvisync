@@ -137,7 +137,7 @@ async function createBoundNode(f, prefix = 'work') {
     session: f.session,
     clientOperationId: `${prefix}-attach`,
     expectedRevision: (await f.app.store.read()).revision,
-    create: { title: `${prefix} project`, nodes: [{ key: 'node', title: `${prefix} node` }] },
+    create: { title: `${prefix} project`, nodes: [{ key: 'node', dependsOn: [], independentReason: '独立测试任务，无需上游成果', title: `${prefix} node` }] },
     nodeKey: 'node',
   });
 }

@@ -24,7 +24,7 @@ test('网页与两个 Agent 通过同一服务完成创建、交接、续接和�
     const project = (await read()).projects.find(item => item.id === created.binding.projectId);
     assert.equal(project.demo, false);
     assert.equal((await read()).nodes.filter(n => n.projectId === project.id).length, 0);
-    const nodeResult = JSON.parse((await exec(process.execPath, [script, 'create-node', project.id, '--title', '首页制作', '--expected-revision', String(created.revision), '--operation-id', 'http-create-node'], options)).stdout);
+    const nodeResult = JSON.parse((await exec(process.execPath, [script, 'create-node', project.id, '--title', '首页制作', '--independent-reason', '首页制作为本项目首个独立成果。', '--expected-revision', String(created.revision), '--operation-id', 'http-create-node'], options)).stdout);
     const node = (await read()).nodes.find(item => item.id === nodeResult.saved.id);
     const agentAContext = await exec(process.execPath, [script, 'context', node.id, '--json'], options);
     const context = JSON.parse(agentAContext.stdout);

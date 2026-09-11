@@ -168,7 +168,7 @@ test('off and on update only an existing live binding', async () => {
       session,
       clientOperationId: 'write-after-recording-on',
       expectedRevision: current.revision,
-      change: { type: 'node.create', projectId: current.binding.projectId, title: '恢复后正常写入' },
+      change: { type: 'node.create', dependsOn: [], independentReason: '独立测试任务，无需上游成果', projectId: current.binding.projectId, title: '恢复后正常写入' },
     });
     assert.equal(written.committed, true);
     assert.equal((await app.store.read()).nodes.find(node => node.id === written.saved.id).title, '恢复后正常写入');
@@ -182,7 +182,7 @@ test('off and on update only an existing live binding', async () => {
       session,
       clientOperationId: 'write-after-on-while-interrupted',
       expectedRevision: interruptedRevision,
-      change: { type: 'node.create', projectId: current.binding.projectId, title: '中断时不应写入' },
+      change: { type: 'node.create', dependsOn: [], independentReason: '独立测试任务，无需上游成果', projectId: current.binding.projectId, title: '中断时不应写入' },
     }), error => error.status === 409 && error.details?.code === 'session-interrupted');
   } finally {
     await app.close();

@@ -50,7 +50,7 @@ test('本机入口隔离验证区真实读写读回，网页不能伪造Agent验
 test('MCP工具从创建到交付使用真实服务，缺失模型诚实保存，同目录新会话只读发现', async t => {
   const f = await fixture(t);
   const initial = await f.execute('jarvisync_discover', { sessionId: f.session.sessionId });
-  const attached = await f.execute('jarvisync_attach', { sessionId: f.session.sessionId, clientOperationId: 'task-create', expectedRevision: initial.revision, create: { title: '桥接验证项目', nodes: [{ key: 'result', title: '制作成果' }] } });
+  const attached = await f.execute('jarvisync_attach', { sessionId: f.session.sessionId, clientOperationId: 'task-create', expectedRevision: initial.revision, create: { title: '桥接验证项目', nodes: [{ key: 'result', dependsOn: [], independentReason: '独立测试任务，无需上游成果', title: '制作成果' }] } });
   const nodeId = attached.nodeIdsByKey.result;
   const started = await f.execute('jarvisync_start', { sessionId: f.session.sessionId, clientOperationId: 'task-start', expectedRevision: attached.revision, nodeId, owner: 'MCP host' });
   const startedNode = (await f.app.store.read()).nodes.find(node => node.id === nodeId);
@@ -68,7 +68,7 @@ test('MCP工具从创建到交付使用真实服务，缺失模型诚实保存�
 
 test('写入已成功但响应丢失时，恢复查原结果，不重复创建或交付', async t => {
   const f = await fixture(t);
-  const body = { session: f.session, clientOperationId: 'lost-create', expectedRevision: (await f.app.store.read()).revision, create: { title: '响应丢失演练', nodes: [{ key: 'a', title: '唯一节点' }] } };
+  const body = { session: f.session, clientOperationId: 'lost-create', expectedRevision: (await f.app.store.read()).revision, create: { title: '响应丢失演练', nodes: [{ key: 'a', dependsOn: [], independentReason: '独立测试任务，无需上游成果', title: '唯一节点' }] } };
   const originalFetch = globalThis.fetch;
   let dropped = false;
   globalThis.fetch = async (url, options) => {
@@ -92,7 +92,7 @@ test('同一操作 ID 的不同请求冲突后，flush 保留第二份内容供�
     session: f.session,
     clientOperationId: 'conflict-project',
     expectedRevision: (await f.app.store.read()).revision,
-    create: { title: '冲突回执项目', nodes: [{ key: 'work', title: '待更新节点' }] },
+    create: { title: '冲突回执项目', nodes: [{ key: 'work', dependsOn: [], independentReason: '独立测试任务，无需上游成果', title: '待更新节点' }] },
     nodeKey: 'work',
   });
   const operationId = 'same-id-different-body';
@@ -125,7 +125,7 @@ test('同一操作 ID 的不同请求冲突后，flush 保留第二份内容供�
 
 test('待同步请求遇到新版本保留待核对，不将旧内容盲目重放', async t => {
   const f = await fixture(t);
-  const attached = await f.client.attach({ session: f.session, clientOperationId: 'create-before-offline', expectedRevision: (await f.app.store.read()).revision, create: { title: '断线演练', nodes: [{ key: 'a', title: '工作' }] } });
+  const attached = await f.client.attach({ session: f.session, clientOperationId: 'create-before-offline', expectedRevision: (await f.app.store.read()).revision, create: { title: '断线演练', nodes: [{ key: 'a', dependsOn: [], independentReason: '独立测试任务，无需上游成果', title: '工作' }] } });
   const nodeId = attached.nodeIdsByKey.a;
   const started = await f.execute('jarvisync_start', { sessionId: f.session.sessionId, clientOperationId: 'start-offline', expectedRevision: attached.revision, nodeId, owner: 'MCP host' });
   const originalFetch = globalThis.fetch;
@@ -140,7 +140,7 @@ test('待同步请求遇到新版本保留待核对，不将旧内容盲目重�
 
 test('用户中断后拒绝迟到写回，新用户请求前不恢复，已提交结果仍可查询', async t => {
   const f = await fixture(t);
-  const attached = await f.client.attach({ session: f.session, clientOperationId: 'interrupt-create', expectedRevision: (await f.app.store.read()).revision, create: { title: '中断演练', nodes: [{ key: 'a', title: '工作' }] } });
+  const attached = await f.client.attach({ session: f.session, clientOperationId: 'interrupt-create', expectedRevision: (await f.app.store.read()).revision, create: { title: '中断演练', nodes: [{ key: 'a', dependsOn: [], independentReason: '独立测试任务，无需上游成果', title: '工作' }] } });
   await f.client.request('event', { session: f.session, event: 'UserPromptSubmit', turnId: 'turn-1' });
   const started = await f.execute('jarvisync_start', { sessionId: f.session.sessionId, clientOperationId: 'interrupt-start', expectedRevision: attached.revision, nodeId: attached.nodeIdsByKey.a, owner: 'MCP host' });
   await f.client.request('event', { session: f.session, event: 'Interrupt' });
@@ -174,7 +174,7 @@ test('限定项目删除后显示失效并可修改范围，同会话能重新�
 
 test('新会话接管须有原宿主中断证据，Stop不算，接管后原会话不能写新执行', async t => {
   const f = await fixture(t);
-  const attached = await f.client.attach({ session: f.session, clientOperationId: 'take-create', expectedRevision: (await f.app.store.read()).revision, create: { title: '真实接续', nodes: [{ key: 'a', title: '未完成节点' }] } });
+  const attached = await f.client.attach({ session: f.session, clientOperationId: 'take-create', expectedRevision: (await f.app.store.read()).revision, create: { title: '真实接续', nodes: [{ key: 'a', dependsOn: [], independentReason: '独立测试任务，无需上游成果', title: '未完成节点' }] } });
   const nodeId = attached.nodeIdsByKey.a;
   const started = await f.execute('jarvisync_start', { sessionId: f.session.sessionId, clientOperationId: 'take-start', expectedRevision: attached.revision, nodeId, owner: 'old host' });
   const nextSession = { ...f.session, sessionId: 'new-host-conversation' };

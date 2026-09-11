@@ -6,6 +6,9 @@ import { fileURLToPath } from 'node:url';
 const CONTEXT_EVENTS = new Set(['SessionStart', 'UserPromptSubmit', 'SubagentStart']);
 const HOOK_NETWORK_BUDGET_MS = 2000;
 const OFFLINE_COOLDOWN_MS = 60000;
+const PROGRESS_REMINDER_MS = 10 * 60 * 1000;
+const PROGRESS_EVENTS = new Set(['SessionStart', 'UserPromptSubmit', 'PreCompact', 'PostToolUse', 'Stop']);
+const STAGE_CHECK = '关键阶段（诊断结论、实施转验证、验证结果、阻塞或决定变化、交接前）核对真实进展；有新事实才用 jarvisync_progress 写已完成、证据、剩余工作和下一步，无新事实不重复写。';
 
 function text(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
@@ -204,7 +207,7 @@ function bindingText(binding) {
 function truncateContext(value) {
   const marker = '……需用 jarvisync_context 读取完整上下文。';
   const source = text(value) || '';
-  return source.length > 900 ? `${source.slice(0, 900 - marker.length)}${marker}` : source;
+  return source.length > 650 ? `${source.slice(0, 650 - marker.length)}${marker}` : source;
 }
 
 function contextFor(input, { binding, directContext, parentBinding, interrupted = false, resumedFromInterrupt = false } = {}) {
@@ -216,14 +219,18 @@ function contextFor(input, { binding, directContext, parentBinding, interrupted 
       + `子 Agent 范围：${input.agent.scope || '宿主未提供；先向父任务核对，不要猜测。'}。仅把父范围作为参考；不得使用父会话 ID、沿用父项目/节点/执行绑定，或写入父执行。`
       + `此子会话尚未关联项目。只有父 Agent 明确传递节点后，才用这个子会话 ID 读取并显式关联；否则不写回。${modelState}`;
   }
-  const scope = directContext ? truncateContext(directContext.markdown) : bindingText(binding);
+  const markdown = text(directContext?.markdown);
+  const nodeSection = markdown?.indexOf('## 当前节点：');
+  const focused = binding?.nodeId && nodeSection >= 0 ? markdown.slice(nodeSection) : markdown;
+  const identity = binding?.nodeId ? `项目 ${binding.projectId}；节点 ${binding.nodeId}；执行 ${binding.runId || '尚未开始'}。` : bindingText(binding);
+  const scope = directContext ? `${identity}\n${truncateContext(focused)}` : bindingText(binding);
   const modelState = input.model ? `宿主本次报告的实际模型为 ${input.model}。` : '宿主未提供实际模型，记录为 host-unavailable，不得猜测。';
   const interruptionState = interrupted
     ? '当前会话仍标记为已中断；等待新的正常用户请求后再写回。'
     : resumedFromInterrupt ? '本次正常用户请求已清除此前的中断状态。' : '';
   return `JarviSync 会话 ${id}：${scope}\n`
     + '普通问答和未确认想法不建档；用户说不记录时不写回。明确工作才读取或关联项目，并在实际开始、关键进展、受阻或明确交付时写回。所有 MCP 调用必须带此 sessionId。'
-    + `Stop/SessionEnd 不是交付；不要自动 deliver、重启或无限续跑。${modelState}${interruptionState}`;
+    + `${STAGE_CHECK}Stop/SessionEnd 不是交付；不要自动 deliver、重启或无限续跑。${modelState}${interruptionState}`;
 }
 
 function injectionKey({ input, binding, parentBinding, recordingDisabled, interrupted }) {
@@ -265,6 +272,33 @@ export async function runHook({
     return { input, state: null, output: hookOutput(input.event, additionalContext, null) };
   }
   const previous = await readSessionState(config, input.session);
+  if (input.event === 'Interrupt') {
+    // Publish the interruption before any network wait. A prompt may clear only
+    // the generation it observed on entry, never a later interruption.
+    await updateSessionState(config, input.session, current => ({
+      ...current, interrupted: true, interruptionGeneration: randomUUID(), progressCheckpoint: null,
+    }));
+  }
+  if (input.event === 'PostToolUse') {
+    if (!previous?.binding?.runId || (!previous.progressCheckpoint && !previous.connectionError) || previous.binding.recording !== true
+        || previous.binding.humanEndedAt || previous.interrupted || previous.recordingDisabled
+        || previous.explicitRecordingOverride === false
+        || (previous.lastProgressPollAt && clock() - Date.parse(previous.lastProgressPollAt) < 60000)) {
+      return { input, state: previous, output: null };
+    }
+    // Tool output is only a chance to check, never a progress fact. Reserve the
+    // polling slot independently of updatedAt so frequent tools cannot defer it.
+    let poll = false;
+    const state = await updateSessionState(config, input.session, current => {
+      if (!current?.binding?.runId || (!current.progressCheckpoint && !current.connectionError) || current.binding.recording !== true
+          || current.binding.humanEndedAt || current.interrupted || current.recordingDisabled
+          || current.explicitRecordingOverride === false
+          || (current.lastProgressPollAt && clock() - Date.parse(current.lastProgressPollAt) < 60000)) return current;
+      poll = true;
+      return { ...current, lastProgressPollAt: now() };
+    });
+    if (!poll) return { input, state, output: null };
+  }
   const runtime = await readHookRuntime(config);
   let discovery = null;
   let status = null;
@@ -313,7 +347,7 @@ export async function runHook({
               modelSource: input.modelSource,
             });
           }
-          if (CONTEXT_EVENTS.has(input.event) || input.event === 'Stop') {
+          if (CONTEXT_EVENTS.has(input.event) || PROGRESS_EVENTS.has(input.event) || input.event === 'ProgressCheck') {
             status = await client.request('status', { session: input.session });
             status = { ...status, binding: discovery?.binding ?? null };
           }
@@ -347,6 +381,20 @@ export async function runHook({
   const reminder = input.event === 'Stop' ? pendingKey(await pendingOperations(config, input.session)) : null;
   const shouldRemind = !recordingDisabled && reminder && previous?.stopReminderKey !== reminder;
   const binding = discovery ? discovery.binding ?? null : previous?.binding ?? null;
+  // A successful live read is required: old/offline state must never imply active work.
+  const progressCheckpoint = !connectionError && !recordingDisabled && !interrupted
+    ? status && Object.hasOwn(status, 'progressCheckpoint') ? status.progressCheckpoint
+      : discovery?.progressCheckpoint ?? directContext?.progressCheckpoint ?? null : null;
+  const progressKey = progressCheckpoint?.reminderDue === true && binding?.recording === true
+    && binding.runId === progressCheckpoint.runId && binding.nodeId === progressCheckpoint.nodeId
+    ? `${progressCheckpoint.runId}:${progressCheckpoint.lastProgressAt}` : null;
+  // PreCompact refreshes the cache only. Its output is not a verified model-input
+  // channel (Claude discards systemMessage); resume/compact SessionStart delivers it.
+  const progressReminder = PROGRESS_EVENTS.has(input.event) && input.event !== 'PreCompact' && progressKey
+    && previous?.progressReminderKey !== progressKey
+    && (!previous?.progressReminderAt || clock() - Date.parse(previous.progressReminderAt) >= PROGRESS_REMINDER_MS);
+  const progressNotice = progressReminder
+    ? `JarviSync：当前执行已一段时间没有进展记录，请核对是否已有关键阶段成果。${STAGE_CHECK}不会自动写入、交付、重启或继续本回合。` : null;
   const key = injectionKey({ input, binding, parentBinding, recordingDisabled, interrupted });
   const resumedFromInterrupt = input.event === 'UserPromptSubmit' && previous?.interrupted === true;
   const disabledNotice = discovery?.binding?.recording === false
@@ -354,16 +402,19 @@ export async function runHook({
     : 'JarviSync 自动记录当前已停用或未获授权；不要调用 JarviSync 写入，继续正常处理用户请求。';
   const shouldInjectContext = CONTEXT_EVENTS.has(input.event)
     && (input.event === 'SessionStart' || resumedFromInterrupt || previous?.lastInjectionKey !== key);
-  const additionalContext = shouldInjectContext
+  let additionalContext = shouldInjectContext
     ? recordingDisabled ? disabledNotice : contextFor(input, { binding, directContext, parentBinding, interrupted, resumedFromInterrupt })
     : null;
+  const modelNotice = CONTEXT_EVENTS.has(input.event) || input.event === 'PostToolUse';
+  if (progressNotice && modelNotice) additionalContext = [additionalContext, progressNotice].filter(Boolean).join('\n');
   const stateChanged = previous?.lastInjectionKey !== key;
   const lifecycleNotice = input.event === 'Interrupt' && stateChanged
     ? 'JarviSync 已记录当前会话中断；在下一次正常用户请求前不要写回。'
     : null;
   const systemMessage = recordingDisabled && !CONTEXT_EVENTS.has(input.event) && stateChanged
     ? disabledNotice
-    : lifecycleNotice || (shouldRemind ? 'JarviSync 有待补的协作记录；请在下次正常对话中核对。不会自动交付或继续本回合。' : null);
+    : lifecycleNotice || (progressNotice && !modelNotice ? progressNotice : null)
+      || (shouldRemind ? 'JarviSync 有待补的协作记录；请在下次正常对话中核对。不会自动交付或继续本回合。' : null);
   let state = {
     schemaVersion: 1,
     boardInstanceId: text(config.boardInstanceId) || null,
@@ -379,6 +430,10 @@ export async function runHook({
     lastAgent: input.agent,
     updatedAt: now(),
     stopReminderKey: shouldRemind ? reminder : previous?.stopReminderKey ?? null,
+    progressCheckpoint,
+    progressObservedAt: connectionError ? null : now(),
+    progressReminderKey: progressReminder ? progressKey : previous?.progressReminderKey ?? null,
+    progressReminderAt: progressReminder ? now() : previous?.progressReminderAt ?? null,
     connectionError,
     connectionStatus,
     interrupted,
@@ -386,14 +441,31 @@ export async function runHook({
     explicitRecordingOverride,
     lastInjectionKey: additionalContext || systemMessage ? key : previous?.lastInjectionKey ?? null,
   };
-  state = await updateSessionState(config, input.session, current => ({
-    ...state,
-    explicitRecordingOverride: typeof current?.explicitRecordingOverride === 'boolean'
-      ? current.explicitRecordingOverride
-      : state.explicitRecordingOverride,
-  }));
+  let suppressOutput = false;
+  state = await updateSessionState(config, input.session, current => {
+    const newerBinding = Number.isSafeInteger(current?.bindingRevision)
+      && (!Number.isSafeInteger(discovery?.revision) || current.bindingRevision > discovery.revision);
+    const interruptedNow = current?.interrupted === true && (input.event !== 'UserPromptSubmit'
+      || current.interruptionGeneration !== previous?.interruptionGeneration);
+    const disabledNow = current?.explicitRecordingOverride === false || current?.binding?.humanEndedAt;
+    suppressOutput = Boolean(newerBinding || interruptedNow && !interrupted || disabledNow && !recordingDisabled);
+    return {
+      ...state,
+      ...(newerBinding ? { binding: current.binding, progressCheckpoint: current.progressCheckpoint,
+        progressObservedAt: current.progressObservedAt } : {}),
+      bindingRevision: newerBinding ? current.bindingRevision : discovery?.revision ?? current?.bindingRevision,
+      interrupted: interruptedNow || state.interrupted,
+      interruptionGeneration: current?.interruptionGeneration ?? previous?.interruptionGeneration ?? null,
+      ...(interruptedNow || disabledNow ? { progressCheckpoint: null } : {}),
+      ...(suppressOutput ? { progressReminderKey: current?.progressReminderKey ?? null,
+        progressReminderAt: current?.progressReminderAt ?? null } : {}),
+      lastProgressPollAt: current?.lastProgressPollAt ?? null,
+      explicitRecordingOverride: typeof current?.explicitRecordingOverride === 'boolean'
+        ? current.explicitRecordingOverride : state.explicitRecordingOverride,
+    };
+  });
 
-  return { input, state, output: hookOutput(input.event, additionalContext, systemMessage) };
+  return { input, state, output: suppressOutput ? null : hookOutput(input.event, additionalContext, systemMessage) };
 }
 
 async function readStdin() {

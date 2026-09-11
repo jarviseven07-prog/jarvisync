@@ -156,13 +156,28 @@ export async function installIntegration(profile, options = {}) {
   if (profile.host === 'mcp') return { installation: 'manual', message: '接入配置已准备。请使用宿主的 MCP 导入入口；仅基础工具连接，无自动会话检查。' };
   const executable = await findHost(profile.host, options);
   if (!executable) throw new Error(`未找到 ${names[profile.host]} 本机命令行，请先安装该宿主，再回到这里安装接入。`);
-  const run = args => exec(executable, args, { windowsHide: true, timeout: 30_000, maxBuffer: 1024 * 1024, env: { ...process.env, ...(options.hostEnv || {}) } });
+  const run = args => (options.runHostCommand || exec)(executable, args, { windowsHide: true, timeout: 30_000, maxBuffer: 1024 * 1024, env: { ...process.env, ...(options.hostEnv || {}) } });
   if (profile.host === 'codex') {
     await run(['plugin', 'marketplace', 'add', profile.marketplaceRoot]);
+    // Codex's local-plugin update contract is a changed manifest version plus
+    // plugin add again. There is no `plugin update` command or need to remove.
     await run(['plugin', 'add', `${profile.pluginName}@${profile.marketplaceName}`]);
   } else if (profile.host === 'claude-code') {
-    await run(['plugin', 'marketplace', 'add', profile.marketplaceRoot]);
-    await run(['plugin', 'install', `${profile.pluginName}@${profile.marketplaceName}`, '--scope', 'user']);
+    const marketplaces = JSON.parse((await run(['plugin', 'marketplace', 'list', '--json'])).stdout);
+    if (!Array.isArray(marketplaces)) throw new Error('Claude Code 返回了无法识别的市场列表，未修改接入。');
+    const marketplace = marketplaces.find(item => item.name === profile.marketplaceName);
+    if (marketplace) {
+      if (marketplace.source !== 'directory' || typeof marketplace.path !== 'string' || resolve(marketplace.path) !== resolve(profile.marketplaceRoot)) {
+        throw new Error('Claude Code 中同名市场指向其他来源，未覆盖；请核对现有接入。');
+      }
+    } else await run(['plugin', 'marketplace', 'add', profile.marketplaceRoot]);
+    const plugins = JSON.parse((await run(['plugin', 'list', '--json'])).stdout);
+    if (!Array.isArray(plugins)) throw new Error('Claude Code 返回了无法识别的插件列表，未安装或更新插件。');
+    const selector = `${profile.pluginName}@${profile.marketplaceName}`;
+    const installed = plugins.some(item => item.id === selector && item.scope === 'user');
+    // install skips existing plugins; update refreshes their versioned cache
+    // while preserving enablement and installations belonging to other scopes.
+    await run(['plugin', installed ? 'update' : 'install', selector, '--scope', 'user']);
   } else {
     // Hermes native plugin installation is finalized against the installed host API.
     const { installHermes } = await import('./hermes/install.mjs');

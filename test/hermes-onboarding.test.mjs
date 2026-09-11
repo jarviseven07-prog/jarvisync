@@ -166,3 +166,78 @@ test('Hermes installer derives a Windows bin home when no explicit isolated home
     await rm(home, { recursive: true, force: true });
   }
 });
+
+test('Hermes pre_llm_call reads fresh active cache, throttles checks and rejects unsafe cache', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const result = spawnSync('python', ['-c', String.raw`
+import importlib.util, json, tempfile, pathlib, hashlib, datetime, sys
+spec = importlib.util.spec_from_file_location('jarvisync_test', sys.argv[1])
+p = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(p)
+with tempfile.TemporaryDirectory() as root:
+    root = pathlib.Path(root)
+    p._CONNECTION = root / 'connection.json'
+    p._CONNECTION.write_text(json.dumps({'profileId':'profile','stateDir':str(root)}))
+    (root / 'sessions').mkdir()
+    key = hashlib.sha256(b'hermes\0profile\0session').hexdigest()
+    cache = root / 'sessions' / (key + '.json')
+    now = [2000000000.0]
+    p.time.time = lambda: now[0]
+    emit = []
+    p._emit = lambda *args, **kwargs: emit.append((args, kwargs))
+    def stamp(): return datetime.datetime.fromtimestamp(now[0], datetime.timezone.utc).isoformat()
+    state = {'progressObservedAt':stamp(), 'binding':{'recording':True,'nodeId':'n','runId':'r'}, 'progressCheckpoint':{'runId':'r','nodeId':'n','lastProgressAt':'first','reminderDue':True}}
+    def save(): cache.write_text(json.dumps(state))
+    save()
+    assert 'JarviSync progress check:' in p._pre_llm_call(session_id='session')
+    assert 'JarviSync progress check:' not in p._pre_llm_call(session_id='session')
+    assert len(emit) == 1 and emit[0][0] == ('ProgressCheck',)
+    now[0] += 61
+    state['progressObservedAt'] = stamp()
+    state['progressCheckpoint']['lastProgressAt'] = 'second'
+    save()
+    assert not p._progress_notice('session')
+    assert len(emit) == 2
+    now[0] += 600
+    state['progressObservedAt'] = stamp()
+    save()
+    assert p._progress_notice('session')
+    for field, value in [('interrupted',True),('recordingDisabled',True),('explicitRecordingOverride',False)]:
+        now[0] += 600
+        state['progressObservedAt'] = stamp()
+        state[field] = value
+        save()
+        count = len(emit)
+        assert not p._progress_notice('session')
+        assert len(emit) == count
+        del state[field]
+    now[0] += 600
+    state['progressCheckpoint']['lastProgressAt'] = 'third'
+    save()
+    assert not p._progress_notice('session')  # cache is stale
+    state['progressObservedAt'] = stamp()
+    state['progressCheckpoint'] = None
+    save()
+    assert not p._progress_notice('session')  # execution ended
+    count = len(emit)
+    assert not p._progress_notice('session')
+    assert len(emit) == count  # ended run does not retry
+    now[0] += 61
+    state['connectionError'] = 'offline'
+    state['progressObservedAt'] = None
+    save()
+    assert not p._progress_notice('session')
+    assert len(emit) == count + 1
+    assert not p._progress_notice('session')
+    assert len(emit) == count + 1  # offline refresh remains throttled
+    now[0] += 61
+    del state['connectionError']
+    state['progressObservedAt'] = stamp()
+    state['progressCheckpoint'] = {'runId':'r','nodeId':'n','lastProgressAt':'recovered','reminderDue':True}
+    save()
+    assert p._progress_notice('session')
+    cache.write_text('bad json')
+    assert not p._progress_notice('session')
+` , join(pluginRoot, '__init__.py')], { encoding: 'utf8', windowsHide: true });
+  assert.equal(result.status, 0, result.stderr || result.error?.message);
+});

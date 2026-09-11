@@ -842,6 +842,7 @@ export function validateBoard(board) {
     used.add(sequence);
     highestNodeNumbers.set(n.projectId, Math.max(highestNodeNumbers.get(n.projectId), sequence));
     nodePatch(Object.fromEntries(['title', 'status', 'owner', 'goal', 'progress', 'next', 'decisions', 'links', 'position', 'archived', ...(n.model === undefined ? [] : ['model']), ...(n.question === undefined ? [] : ['question'])].map(key => [key, n[key]])));
+    if (n.independentReason !== undefined && !text(n.independentReason, '独立原因', 2000, true).trim()) throw new BoardError('独立原因不能为空。', 500);
     nodeIds.set(n.id, n);
   }
   for (const project of board.projects) if (project.nextNodeNumber <= highestNodeNumbers.get(project.id)) throw new BoardError('节点编号流水不正确。', 500);
@@ -901,7 +902,7 @@ export function validateBoard(board) {
   const bindingIds = new Set();
   const sessionKeys = new Set();
   for (const binding of board.agentBindings ?? []) {
-    keys(binding, ['id', 'host', 'profileId', 'sessionId', 'projectId', 'nodeId', 'runId', 'recording', 'createdAt', 'updatedAt', 'humanEndedAt']);
+    keys(binding, ['id', 'host', 'profileId', 'sessionId', 'projectId', 'nodeId', 'runId', 'recording', 'createdAt', 'updatedAt', 'humanEndedAt', 'progressCheckpoint']);
     const id = text(binding.id, '会话绑定 ID', 100, true);
     if (!/^b-[a-f0-9-]{36}$/i.test(id) || bindingIds.has(id)) throw new BoardError('项目数据包含无效或重复会话绑定 ID。', 500);
     bindingIds.add(id);
@@ -921,6 +922,11 @@ export function validateBoard(board) {
     if (binding.runId !== undefined) {
       execution = node && (node.executions ?? []).find(item => item.id === binding.runId);
       if (!execution) throw new BoardError('会话绑定运行不属于绑定节点。', 500);
+    }
+    if (binding.progressCheckpoint !== undefined) {
+      keys(binding.progressCheckpoint, ['runId', 'at']);
+      if (!execution || binding.progressCheckpoint.runId !== execution.id) throw new BoardError('进展检查点不属于绑定运行。', 500);
+      timestamp(binding.progressCheckpoint.at, '进展检查点');
     }
     if (binding.humanEndedAt !== undefined) {
       timestamp(binding.humanEndedAt, '会话人工结束');
@@ -1049,7 +1055,7 @@ export function buildContext(board, { node: nodeId, project: projectId, attachme
     const latestExecution = (node.executions ?? []).at(-1);
     const currentModel = latestExecution?.modelSource === 'host-unavailable' ? '宿主未提供' : node.model || '未记录';
     lines.push('', `## 当前节点：${node.title}`, `节点编号：#${node.nodeNumber}`, `节点 ID：${node.id}`, `状态：${labels[node.status]}${node.archived ? '（已归档）' : ''}`, `负责人：${node.owner || '未指定'}`, `执行模型：${currentModel}`, `更新于：${node.updatedAt}`);
-    for (const [label, value] of [['目标', node.goal], ['当前情况', node.progress], ['待人回答', node.question], ['重要决定', node.decisions], ['下一步', node.next]]) if (value) lines.push('', `### ${label}`, value);
+    for (const [label, value] of [['创建时独立原因', node.independentReason], ['目标', node.goal], ['当前情况', node.progress], ['待人回答', node.question], ['重要决定', node.decisions], ['下一步', node.next]]) if (value) lines.push('', `### ${label}`, value);
     appendExecutions(lines, node);
     appendNodeDeliveries(lines, node);
     if (node.links.length) lines.push('', '### 资料与参考（非明确成果）', ...node.links.map(link => `- ${link}`));
@@ -1064,7 +1070,7 @@ export function buildContext(board, { node: nodeId, project: projectId, attachme
   } else {
     const nodes = board.nodes.filter(n => n.projectId === project.id && !n.archived);
     lines.push('', `## 节点索引（${nodes.length} 个）`);
-    for (const n of nodes.slice(0, 50)) lines.push(`- #${n.nodeNumber} | ${n.id} | ${n.title} | ${labels[n.status]} | ${brief(n.next || n.progress, 160)}`);
+    for (const n of nodes.slice(0, 50)) lines.push(`- #${n.nodeNumber} | ${n.id} | ${n.title} | ${labels[n.status]} | ${brief(n.next || n.progress, 160)}${n.independentReason ? ` | 创建时独立原因：${brief(n.independentReason, 160)}` : ''}`);
     if (nodes.length > 50) lines.push('仅显示前 50 个节点；请在画布选择具体节点。');
   }
   return { revision: board.revision, markdown: lines.join('\n') };

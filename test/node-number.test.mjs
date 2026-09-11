@@ -132,7 +132,7 @@ test('Agent 一次创建项目与多个节点时沿用同一项目流水', async
       create: {
         title: 'Agent 创建项目',
         nodes: [
-          { key: 'first', title: '第一节点' },
+          { key: 'first', dependsOn: [], independentReason: '独立测试任务，无需上游成果', title: '第一节点' },
           { key: 'second', title: '第二节点', dependsOn: ['first'] },
         ],
       },

@@ -127,6 +127,29 @@ export function createClient(config, options = {}) {
     }); } catch { throw new ConnectionError('连接中断，尚未确认写入结果。'); }
     const result = await response.json();
     if (!response.ok) throw new ConnectionError(result.error || '操作未完成。', response.status, result.details);
+    // Successful business replies make a newly attached/started run visible to
+    // same-turn tool hooks. A cache failure must not turn a committed write into
+    // a failed/retriable operation. No extra network request is needed.
+    if (sessionMatches(body.session) && Object.hasOwn(result, 'binding')) {
+      try {
+        const { updateSessionState } = await import('./hook.mjs');
+        await updateSessionState(config, body.session, current => {
+          if (Number.isSafeInteger(result.revision) && Number.isSafeInteger(current?.bindingRevision)
+              && result.revision < current.bindingRevision) return current;
+          const binding = result.binding;
+          const checkpoint = binding?.progressCheckpoint;
+          const ended = action === 'change' && ['node.deliver', 'node.stop'].includes(body.change?.type);
+          const progressCheckpoint = Object.hasOwn(result, 'progressCheckpoint') ? result.progressCheckpoint
+            : !ended && checkpoint?.runId === binding?.runId && checkpoint?.at
+              ? { runId: checkpoint.runId, nodeId: binding.nodeId, lastProgressAt: checkpoint.at,
+                elapsedMs: Math.max(0, Date.now() - Date.parse(checkpoint.at)), reminderDue: false } : null;
+          return { ...current, binding, progressCheckpoint, bindingRevision: result.revision ?? current?.bindingRevision,
+            progressObservedAt: new Date().toISOString(), connectionError: null,
+            recordingDisabled: current?.explicitRecordingOverride === false || binding?.recording === false,
+          };
+        });
+      } catch { /* The authoritative successful response is still returned. */ }
+    }
     return result;
   };
   const sessionMatches = session => session
@@ -144,7 +167,10 @@ export function createClient(config, options = {}) {
   const sameSession = (left, right) => left?.host === right?.host && left?.profileId === right?.profileId && left?.sessionId === right?.sessionId;
   const locallyRecordingDisabled = state => state?.explicitRecordingOverride === false || state?.recordingDisabled === true;
   const isExplicitRecordingToggle = (action, body, state) => {
-    if (action !== 'attach' || typeof body?.recording !== 'boolean' || state?.explicitRecordingOverride !== body.recording) return false;
+    if (action !== 'attach' || typeof body?.recording !== 'boolean') return false;
+    const remoteEnable = typeof state?.explicitRecordingOverride !== 'boolean'
+      && state?.recordingDisabled === true && body.recording === true;
+    if (state?.explicitRecordingOverride !== body.recording && !remoteEnable) return false;
     const allowed = new Set(['session', 'clientOperationId', 'expectedRevision', 'recording']);
     return Object.keys(body).every(key => allowed.has(key));
   };

@@ -18,7 +18,8 @@ const help = `JarviSync
   attach <项目ID> [--node <节点ID>] [--confirm-rebind]
   create-project <名称> [--summary <摘要>]
   update-project <项目ID> [--summary <摘要>] [--title <名称>] [--conversation-ref <来源对话>] [--coordinator <主负责Agent>]
-  create-node <项目ID> --title <标题>
+  create-node <项目ID> --title <标题> --depends-on <上游节点ID> [--depends-on <其他上游节点ID>]
+  create-node <项目ID> --title <标题> --independent-reason <没有上游依赖的原因>
   update <节点ID> [--goal <目标与预期成果>] [--owner <计划负责人>] [--model <模型记录>] [--status idea|todo|doing|blocked] [--progress <进展>] [--next <下一步>] [--decisions <决定>] [--question <需要人回答的问题>] [--link <材料，可重复，替换全部>]
   connect <输入节点ID> --to <后续节点ID>
   archive <节点ID>
@@ -76,6 +77,7 @@ try {
     progress: { type: 'string' }, next: { type: 'string' }, status: { type: 'string' }, owner: { type: 'string' }, model: { type: 'string' },
     goal: { type: 'string' }, decisions: { type: 'string' }, title: { type: 'string' }, summary: { type: 'string' }, question: { type: 'string' },
     link: { type: 'string', multiple: true }, to: { type: 'string' }, project: { type: 'boolean' }, json: { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
+    'depends-on': { type: 'string', multiple: true }, 'independent-reason': { type: 'string' },
     'conversation-ref': { type: 'string' }, coordinator: { type: 'string' }, 'execution-ref': { type: 'string' }, run: { type: 'string' },
     output: { type: 'string', multiple: true }, unresolved: { type: 'string' }, final: { type: 'boolean' }, delivery: { type: 'string' }, clear: { type: 'boolean' },
     reason: { type: 'string' }, node: { type: 'string' }, kind: { type: 'string' }, body: { type: 'string' }, 'source-ref': { type: 'string' },
@@ -176,10 +178,15 @@ try {
           change = { type: 'project.update', id, patch };
           break;
         }
-        case 'create-node':
-          only(['title']);
-          change = { type: 'node.create', projectId: id, title: required('title', '节点标题') };
+        case 'create-node': {
+          only(['title', 'depends-on', 'independent-reason']);
+          const dependsOn = values['depends-on'];
+          if (dependsOn && values['independent-reason'] !== undefined) throw new Error('--depends-on 与 --independent-reason 不能同时提供。');
+          if (dependsOn?.some(value => !value.trim())) throw new Error('--depends-on 必须是实际上游节点 ID，多个上游请重复该参数。');
+          change = { type: 'node.create', projectId: id, title: required('title', '节点标题'),
+            ...(dependsOn ? { dependsOn } : { dependsOn: [], independentReason: required('independent-reason', '没有上游依赖的原因；有依赖时使用 --depends-on') }) };
           break;
+        }
         case 'archive':
         case 'restore':
           only([]);

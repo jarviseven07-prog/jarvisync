@@ -8,12 +8,15 @@ evidence that the requested work was delivered.
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 import os
 from pathlib import Path
 from queue import Full, Queue
 import re
 import subprocess
+import time
+from datetime import datetime
 from threading import Lock, Thread
 from typing import Any
 
@@ -26,6 +29,51 @@ _ENV_NAME = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 _EVENTS: Queue[tuple[list[str], bytes, dict[str, Any]]] = Queue(maxsize=128)
 _WORKER_LOCK = Lock()
 _WORKER_STARTED = False
+_PROGRESS_CHECKS: dict[str, float] = {}
+_PROGRESS_NOTICES: dict[str, tuple[str, float]] = {}
+_PROGRESS_LOCK = Lock()
+
+
+def _progress_notice(session_id: str, model: str = "") -> str:
+    """Read only a fresh, confirmed cache; refresh asynchronously without a host turn event."""
+    now = time.time()
+    try:
+        connection = json.loads(_CONNECTION.read_text(encoding="utf-8"))
+        key = hashlib.sha256(f"hermes\0{connection['profileId']}\0{session_id}".encode()).hexdigest()
+        state = json.loads((Path(connection['stateDir']) / "sessions" / f"{key}.json").read_text(encoding="utf-8"))
+        binding = state.get('binding') or {}
+        checkpoint = state.get('progressCheckpoint') or {}
+        if (state.get('recordingDisabled') or state.get('explicitRecordingOverride') is False
+                or state.get('interrupted') or binding.get('recording') is not True
+                or binding.get('humanEndedAt')
+                or not binding.get('runId')
+                or (not state.get('connectionError') and (binding.get('runId') != checkpoint.get('runId')
+                    or binding.get('nodeId') != checkpoint.get('nodeId')))):
+            return ""
+        with _PROGRESS_LOCK:
+            refresh = now - _PROGRESS_CHECKS.get(session_id, 0) >= 60
+            if refresh:
+                _PROGRESS_CHECKS[session_id] = now
+        if refresh:
+            _emit("ProgressCheck", session_id=session_id, model=model)
+        if state.get('connectionError'):
+            return ""
+        observed = datetime.fromisoformat(state['progressObservedAt'].replace('Z', '+00:00')).timestamp()
+        if not 0 <= now - observed <= 120 or not checkpoint.get('reminderDue'):
+            return ""
+        reminder_key = f"{checkpoint['runId']}:{checkpoint['lastProgressAt']}"
+        with _PROGRESS_LOCK:
+            previous_key, previous_at = _PROGRESS_NOTICES.get(session_id, (None, 0))
+            if previous_key == reminder_key or now - previous_at < 600:
+                return ""
+            _PROGRESS_NOTICES[session_id] = (reminder_key, now)
+        return ("\nJarviSync progress check: this active run has no recent progress record. "
+                "Check for a real diagnosis, implementation-to-validation transition, validation result, "
+                "blocker, decision change, or handoff. Only when new facts exist, call jarvisync_progress "
+                "with completed work, evidence, remaining work and next step. Do not invent progress, "
+                "repeat unchanged updates, deliver automatically, restart, or continue a stopped turn.")
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return ""
 
 _SYSTEM_PROMPT = """\
 JarviSync records explicit work. Normal, unconfirmed, and no-record requests create no records.
@@ -192,6 +240,7 @@ def _pre_llm_call(session_id: str = "", model: str = "", turn_id: str = "",
         "or substitute a lifecycle receipt for these model actions. Questions and no-record "
         "requests skip this protocol. "
         f"JarviSync sessionId for this turn is `{binding}`. Pass this exact value to every JarviSync MCP request."
+        + _progress_notice(binding, model)
     )
 
 

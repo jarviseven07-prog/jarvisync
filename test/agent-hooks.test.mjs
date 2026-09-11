@@ -19,15 +19,16 @@ async function isolated(run) {
   }
 }
 
-function fakeClient({ pendingOps = [], binding = { summary: '接续测试项目。' }, context = null } = {}) {
+function fakeClient({ pendingOps = [], binding = { summary: '接续测试项目。' }, context = null, progressCheckpoint = null } = {}) {
   const calls = [];
   return {
     calls,
     setBinding(value) { binding = value; },
+    setCheckpoint(value) { progressCheckpoint = value; },
     async discover(session) { calls.push(['discover', session]); return { binding }; },
     async request(action, body) {
       calls.push([action, body]);
-      if (action === 'status') return { binding, pendingOps, lastCheckpoint: { summary: '最近检查点。' } };
+      if (action === 'status') return { binding, pendingOps, progressCheckpoint, lastCheckpoint: { summary: '最近检查点。' } };
       return { accepted: true };
     },
     async context(body) {
@@ -407,3 +408,203 @@ test('真实本地服务只接收配置中的 host/profile 与规范事件', asy
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('活动执行无 pending 仍核对进展，按真实检查点去重并限频', async () => isolated(async ({ config }) => {
+  let tick = Date.parse('2026-09-12T10:00:00Z');
+  const binding = { projectId: 'p', nodeId: 'n', runId: 'r', recording: true };
+  const checkpoint = { nodeId: 'n', runId: 'r', lastProgressAt: '2026-09-12T09:00:00Z', elapsedMs: 3600000, reminderDue: true };
+  const client = fakeClient({ binding, progressCheckpoint: checkpoint });
+  const options = { loadConnection: async () => config, createClient: async () => client, clock: () => tick, now: () => new Date(tick).toISOString() };
+  const invoke = event => runHook({ rawInput: { hook_event_name: event, session_id: 'progress' }, ...options });
+  const first = await invoke('Stop');
+  assert.match(first.output.systemMessage, /核对/);
+  assert.equal(first.output.decision, undefined);
+  assert.equal(first.output.continue, undefined);
+  tick += 11 * 60000;
+  assert.equal((await invoke('Stop')).output, null);
+  client.setCheckpoint({ ...checkpoint, lastProgressAt: '2026-09-12T10:01:00Z' });
+  assert.match((await invoke('UserPromptSubmit')).output.hookSpecificOutput.additionalContext, /核对/);
+  client.setCheckpoint({ ...checkpoint, lastProgressAt: '2026-09-12T10:02:00Z' });
+  assert.equal((await invoke('Stop')).output, null);
+  tick += 10 * 60000;
+  assert.match((await invoke('Stop')).output.systemMessage, /核对/);
+  assert.ok(client.calls.every(([action]) => ['discover', 'status', 'event'].includes(action)));
+}));
+
+test('压缩前仅刷新待提醒状态，压缩恢复后用上下文提醒', async () => isolated(async ({ config }) => {
+  const client = fakeClient({ binding: { projectId: 'p', nodeId: 'n', runId: 'r', recording: true }, progressCheckpoint: { nodeId: 'n', runId: 'r', lastProgressAt: '2026-09-12T09:00:00Z', reminderDue: true } });
+  const options = { loadConnection: async () => config, createClient: async () => client };
+  const compact = await runHook({ rawInput: { hook_event_name: 'PreCompact', session_id: 'compact-progress' }, ...options });
+  assert.equal(compact.output, null);
+  assert.equal(compact.state.progressCheckpoint.reminderDue, true);
+  assert.equal(compact.state.progressReminderKey, null);
+  const resumed = await runHook({ rawInput: { hook_event_name: 'SessionStart', source: 'compact', session_id: 'compact-progress' }, ...options });
+  assert.match(resumed.output.hookSpecificOutput.additionalContext, /核对/);
+}));
+
+test('失效执行、停用、中断或断网缓存不产生进展提醒', async () => isolated(async ({ config }) => {
+  const checkpoint = { nodeId: 'n', runId: 'r', lastProgressAt: '2026-09-12T09:00:00Z', reminderDue: true };
+  for (const [name, binding, progressCheckpoint] of [
+    ['unbound', null, checkpoint],
+    ['ended', { nodeId: 'n', runId: 'r', recording: true }, null],
+    ['old-run', { nodeId: 'n', runId: 'new', recording: true }, checkpoint],
+    ['disabled', { nodeId: 'n', runId: 'r', recording: false }, checkpoint],
+  ]) {
+    const client = fakeClient({ binding, progressCheckpoint });
+    const result = await runHook({ rawInput: { hook_event_name: 'Stop', session_id: name }, loadConnection: async () => config, createClient: async () => client });
+    assert.doesNotMatch(JSON.stringify(result.output), /当前执行已一段时间/);
+  }
+  const client = fakeClient({ binding: { nodeId: 'n', runId: 'r', recording: true }, progressCheckpoint: checkpoint });
+  const options = { loadConnection: async () => config, createClient: async () => client };
+  await runHook({ rawInput: { hook_event_name: 'Interrupt', session_id: 'interrupted-progress' }, ...options });
+  const result = await runHook({ rawInput: { hook_event_name: 'ProgressCheck', session_id: 'interrupted-progress' }, ...options });
+  assert.equal(result.state.progressCheckpoint, null);
+  assert.equal(result.output, null);
+  assert.ok(!client.calls.some(([action, body]) => action === 'event' && body.event === 'ProgressCheck'));
+  const offline = await runHook({ rawInput: { hook_event_name: 'Stop', session_id: 'offline-progress' }, ...options, createClient: async () => { throw new Error('offline'); } });
+  assert.equal(offline.state.progressCheckpoint, null);
+  assert.equal(offline.state.progressObservedAt, null);
+  assert.equal(offline.output, null);
+}));
+
+test('长项目背景不会挤掉当前绑定节点和执行标识', async () => isolated(async ({ config }) => {
+  const binding = { projectId: 'p', nodeId: 'n', runId: 'r', recording: true };
+  const client = fakeClient({ binding, context: { markdown: '# 项目\n' + '背景'.repeat(2000) + '\n## 当前节点：正在验证\n节点 ID：n\n当前情况：实现完成，待验证' } });
+  const result = await runHook({ rawInput: { hook_event_name: 'SessionStart', session_id: 'long-context' }, loadConnection: async () => config, createClient: async () => client });
+  const context = result.output.hookSpecificOutput.additionalContext;
+  assert.match(context.slice(0, 400), /执行 r/);
+  assert.match(context.slice(0, 400), /实现完成，待验证/);
+  assert.doesNotMatch(context, /背景背景/);
+}));
+
+test('PostToolUse 活动会话每分钟才联网，工具活动不会滑动推迟检查', async () => isolated(async ({ config }) => {
+  let tick = Date.parse('2026-09-12T10:00:00Z');
+  const client = fakeClient({ binding: { projectId: 'p', nodeId: 'n', runId: 'r', recording: true }, progressCheckpoint: { nodeId: 'n', runId: 'r', lastProgressAt: '2026-09-12T09:00:00Z', reminderDue: false } });
+  const options = { loadConnection: async () => config, createClient: async () => client, clock: () => tick, now: () => new Date(tick).toISOString() };
+  const invoke = event => runHook({ rawInput: { hook_event_name: event, session_id: 'tool-progress' }, ...options });
+  await invoke('SessionStart');
+  await invoke('PostToolUse');
+  const count = client.calls.length;
+  for (let i = 0; i < 5; i++) { tick += 10000; assert.equal((await invoke('PostToolUse')).output, null); }
+  assert.equal(client.calls.length, count);
+  client.setCheckpoint({ nodeId: 'n', runId: 'r', lastProgressAt: '2026-09-12T09:00:00Z', reminderDue: true });
+  tick += 10000;
+  const due = await invoke('PostToolUse');
+  assert.match(due.output.hookSpecificOutput.additionalContext, /核对/);
+  assert.equal(due.output.hookSpecificOutput.hookEventName, 'PostToolUse');
+  assert.deepEqual(Object.keys(due.output), ['hookSpecificOutput']);
+  assert.equal(client.calls.length, count + 2);
+  tick += 60000;
+  assert.equal((await invoke('PostToolUse')).output, null);
+  assert.ok(!client.calls.some(([action, body]) => action === 'event' && body.event === 'PostToolUse'));
+}));
+
+test('未绑定工具事件不联网也不创建共享状态', async () => isolated(async ({ config }) => {
+  const result = await runHook({ rawInput: { hook_event_name: 'PostToolUse', session_id: 'no-work' }, loadConnection: async () => config, createClient: async () => { throw new Error('must not connect'); } });
+  assert.equal(result.state, null);
+  assert.equal(result.output, null);
+}));
+
+test('同回合 MCP attach/start 后工具检查可见，结束清除活动缓存', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'jarvisync-hook-same-turn-'));
+  const app = await startServer({ port: 0, dataDir: directory });
+  try {
+    await app.onboarding.prepare({ host: 'codex', scope: 'work' });
+    const profile = (await app.onboarding.read()).profiles.find(item => item.host === 'codex');
+    const config = { url: app.url, boardInstanceId: app.store.boardInstanceId, dataDir: directory, stateDir: join(directory, 'hook-state'), host: 'codex', profileId: profile.id, connectionToken: profile.connectionToken };
+    const session = { host: 'codex', profileId: profile.id, sessionId: 'same-turn' };
+    const client = createClient(config);
+    await runHook({ rawInput: { hook_event_name: 'SessionStart', session_id: session.sessionId }, loadConnection: async () => config });
+    const attached = await client.attach({ session, clientOperationId: 'attach-same-turn', expectedRevision: 0, create: { title: 'same turn', nodes: [{ key: 'work', title: 'work', dependsOn: [], independentReason: '本测试独立入口' }] }, nodeKey: 'work' });
+    const started = await client.change({ session, clientOperationId: 'start-same-turn', expectedRevision: attached.revision, change: { type: 'node.start', id: attached.binding.nodeId, executionRef: 'same-turn', owner: 'Codex', model: null, modelSource: 'host-unavailable' } });
+    const cached = await readSessionState(config, session);
+    assert.equal(cached.binding.runId, started.binding.runId);
+    assert.equal(cached.progressCheckpoint.runId, started.binding.runId);
+    const checked = await runHook({ rawInput: { hook_event_name: 'PostToolUse', session_id: session.sessionId }, loadConnection: async () => config });
+    assert.ok(checked.state.lastProgressPollAt);
+    assert.equal(checked.state.progressCheckpoint.runId, started.binding.runId);
+    await client.change({ session, clientOperationId: 'stop-same-turn', expectedRevision: started.revision, change: { type: 'node.stop', id: attached.binding.nodeId, runId: started.binding.runId, reason: '测试实际停止' } });
+    assert.equal((await readSessionState(config, session)).progressCheckpoint, null);
+    const stopped = await runHook({ rawInput: { hook_event_name: 'PostToolUse', session_id: session.sessionId }, loadConnection: async () => config, createClient: async () => { throw new Error('ended run must not poll'); } });
+    assert.equal(stopped.output, null);
+  } finally { await app.close(); await rm(directory, { recursive: true, force: true }); }
+});
+
+test('慢 Hook 不能覆盖较新绑定或中断，也不能输出过期提醒', async () => isolated(async ({ config }) => {
+  const session = { host: config.host, profileId: config.profileId, sessionId: 'late-hook' };
+  const oldBinding = { projectId: 'p', nodeId: 'n', runId: 'old', recording: true };
+  await writeSessionState(config, session, { binding: oldBinding, bindingRevision: 1, progressCheckpoint: { runId: 'old', nodeId: 'n', lastProgressAt: 'old', reminderDue: true } });
+  let ready;
+  const waiting = new Promise(resolve => { ready = resolve; });
+  let finish;
+  const gate = new Promise(resolve => { finish = resolve; });
+  const client = { async discover() { return { binding: oldBinding, revision: 1 }; }, async request() { ready(); await gate; return { progressCheckpoint: { runId: 'old', nodeId: 'n', lastProgressAt: 'old', reminderDue: true } }; } };
+  const promise = runHook({ rawInput: { hook_event_name: 'ProgressCheck', session_id: session.sessionId }, loadConnection: async () => config, createClient: async () => client });
+  await waiting;
+  await updateSessionState(config, session, current => ({ ...current, binding: { ...oldBinding, runId: 'new' }, bindingRevision: 2, interrupted: true, progressCheckpoint: null }));
+  finish();
+  const result = await promise;
+  assert.equal(result.state.binding.runId, 'new');
+  assert.equal(result.state.interrupted, true);
+  assert.equal(result.state.progressCheckpoint, null);
+  assert.equal(result.output, null);
+}));
+
+test('慢用户提交可以清先前中断，但不能清等待期间新到的中断', async () => isolated(async ({ config }) => {
+  const session = { host: config.host, profileId: config.profileId, sessionId: 'prompt-interrupt-race' };
+  const binding = { projectId: 'p', nodeId: 'n', runId: 'r', recording: true };
+  const fast = fakeClient({ binding });
+  const options = { loadConnection: async () => config, createClient: async () => fast };
+  const input = event => ({ hook_event_name: event, session_id: session.sessionId });
+  await runHook({ rawInput: input('Interrupt'), ...options });
+  const oldGeneration = (await readSessionState(config, session)).interruptionGeneration;
+  let ready;
+  const enteredStatus = new Promise(resolve => { ready = resolve; });
+  let finish;
+  const gate = new Promise(resolve => { finish = resolve; });
+  const slow = { async discover() { return { binding }; }, async request(action) { if (action === 'status') { ready(); await gate; return { session: { interrupted: false } }; } return {}; } };
+  const pendingPrompt = runHook({ rawInput: input('UserPromptSubmit'), ...options, createClient: async () => slow });
+  await enteredStatus;
+  await runHook({ rawInput: input('Interrupt'), ...options });
+  assert.notEqual((await readSessionState(config, session)).interruptionGeneration, oldGeneration);
+  finish();
+  const latePrompt = await pendingPrompt;
+  assert.equal(latePrompt.state.interrupted, true);
+  assert.equal(latePrompt.state.progressCheckpoint, null);
+  assert.equal(latePrompt.output, null);
+  const subsequentPrompt = await runHook({ rawInput: input('UserPromptSubmit'), ...options });
+  assert.equal(subsequentPrompt.state.interrupted, false);
+  assert.match(subsequentPrompt.output.hookSpecificOutput.additionalContext, /清除此前的中断/);
+}));
+
+test('工具轮询暂时离线后同回合恢复，结束状态不重试', async () => isolated(async ({ config }) => {
+  let tick = Date.parse('2026-09-12T10:00:00Z');
+  let offline = false;
+  let connections = 0;
+  const binding = { projectId: 'p', nodeId: 'n', runId: 'r', recording: true };
+  const client = fakeClient({ binding, progressCheckpoint: { nodeId: 'n', runId: 'r', lastProgressAt: 'old', reminderDue: false } });
+  const options = { loadConnection: async () => config, createClient: async () => { connections++; if (offline) throw new Error('offline'); return client; }, clock: () => tick, now: () => new Date(tick).toISOString() };
+  const invoke = event => runHook({ rawInput: { hook_event_name: event, session_id: 'recover-tool' }, ...options });
+  await invoke('SessionStart');
+  offline = true;
+  const failed = await invoke('PostToolUse');
+  assert.equal(failed.state.progressCheckpoint, null);
+  assert.ok(failed.state.connectionError);
+  const count = connections;
+  tick += 30000;
+  assert.equal((await invoke('PostToolUse')).output, null);
+  assert.equal(connections, count);
+  tick += 31000;
+  offline = false;
+  client.setCheckpoint({ nodeId: 'n', runId: 'r', lastProgressAt: 'old', reminderDue: true });
+  const recovered = await invoke('PostToolUse');
+  assert.match(recovered.output.hookSpecificOutput.additionalContext, /核对/);
+  assert.equal(recovered.state.connectionError, null);
+  tick += 61000;
+  client.setCheckpoint(null);
+  await invoke('PostToolUse');
+  const endedCount = connections;
+  tick += 61000;
+  assert.equal((await invoke('PostToolUse')).output, null);
+  assert.equal(connections, endedCount);
+}));

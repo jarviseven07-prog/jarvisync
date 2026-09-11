@@ -158,7 +158,7 @@ export async function startServer({ port = Number(process.env.PORT || 4317), dat
             const current = await agents.discover({ boardInstanceId: store.boardInstanceId, session: body.session });
             const outside = current.binding && current.binding.projectId !== profile.projectId;
             if (action === 'attach') { serviceBody.projectId = profile.projectId; if (outside) serviceBody.confirmRebind = true; }
-            else if (action === 'discover' && outside) return json(res, { ...current, binding: null, candidates: [{ projectId: project.id, projectNumber: project.projectNumber, title: project.title, summary: project.summary }], message: '记录范围已改变，请重新关联当前已选项目。' });
+            else if (action === 'discover' && outside) return json(res, { ...current, binding: null, progressCheckpoint: null, candidates: [{ projectId: project.id, projectNumber: project.projectNumber, title: project.title, summary: project.summary }], message: '记录范围已改变，请重新关联当前已选项目。' });
             else if (outside) throw new BoardError('当前会话不属于已授权项目，请重新关联后继续。', 403);
           }
         }
@@ -171,11 +171,15 @@ export async function startServer({ port = Number(process.env.PORT || 4317), dat
         }
         if (action === 'discover') {
           const result = await agents.discover(serviceBody);
+          if (profile.sessions[digest(body.session.sessionId)]?.interrupted) result.progressCheckpoint = null;
           if (profile.scope === 'project') result.candidates = result.candidates.filter(item => item.projectId === profile.projectId);
           return json(res, result);
         }
         const result = await agents[action](serviceBody);
-        if (action === 'change') await onboarding.agentEvent({ ...body, event: 'Checkpoint' });
+        if (action === 'context' && profile.sessions[digest(body.session.sessionId)]?.interrupted) result.progressCheckpoint = null;
+        if (action === 'takeover' || action === 'change' && ['node.start', 'node.run.update'].includes(body.change?.type)) {
+          await onboarding.agentEvent({ ...body, event: 'Checkpoint' });
+        }
         return json(res, result);
       }
       if (url.pathname === '/api/board' && req.method === 'GET') return json(res, await store.read());

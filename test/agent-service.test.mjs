@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
@@ -39,7 +40,7 @@ async function createBoundProject(service, store, overrides = {}) {
       title: '跨宿主经营分析',
       summary: '整理数据并制作交付页面。',
       nodes: [
-        { key: 'analysis', title: '整理经营数据', goal: '留下可核对的指标底稿。', next: '完成后交给页面节点。' },
+        { key: 'analysis', dependsOn: [], independentReason: '独立测试任务，无需上游成果', title: '整理经营数据', goal: '留下可核对的指标底稿。', next: '完成后交给页面节点。' },
         { key: 'page', title: '制作报告页面', dependsOn: ['analysis'] },
       ],
     },
@@ -400,7 +401,7 @@ test('项目来源会话执行当前节点时仍可安排同项目后续节点�
     session,
     clientOperationId: 'coordinator-create-while-running',
     expectedRevision: started.revision,
-    change: { type: 'node.create', projectId: projectBinding.binding.projectId, title: '协调者新增后续节点' },
+    change: { type: 'node.create', dependsOn: [], independentReason: '独立测试任务，无需上游成果', projectId: projectBinding.binding.projectId, title: '协调者新增后续节点' },
   }));
   assert.equal(planned.binding.nodeId, started.binding.nodeId);
   assert.equal(planned.binding.runId, started.binding.runId);
@@ -430,7 +431,7 @@ test('项目来源会话执行当前节点时仍可安排同项目后续节点�
     session: otherSession,
     clientOperationId: 'worker-cannot-create-node',
     expectedRevision: worker.revision,
-    change: { type: 'node.create', projectId: projectBinding.binding.projectId, title: '普通执行者不应新增' },
+    change: { type: 'node.create', dependsOn: [], independentReason: '独立测试任务，无需上游成果', projectId: projectBinding.binding.projectId, title: '普通执行者不应新增' },
   })), error => error instanceof BoardError
     && error.status === 409
     && error.details?.code === 'binding-scope-conflict'
@@ -575,7 +576,7 @@ test('删除项目清除当前幂等结果中的业务正文，旧请求只返�
     session,
     clientOperationId: 'private-create-operation',
     expectedRevision: 0,
-    create: { title: '待删除私密项目', summary: privateSummary, nodes: [{ key: 'private', title: '私密节点' }] },
+    create: { title: '待删除私密项目', summary: privateSummary, nodes: [{ key: 'private', dependsOn: [], independentReason: '独立测试任务，无需上游成果', title: '私密节点' }] },
     nodeKey: 'private',
   });
   const attached = await service().attach(createRequest);
@@ -610,4 +611,58 @@ test('删除项目清除当前幂等结果中的业务正文，旧请求只返�
   const historyNames = await readdir(join(directory, 'history'));
   const historyContents = await Promise.all(historyNames.map(name => readFile(join(directory, 'history', name), 'utf8')));
   assert.ok(historyContents.some(content => content.includes(privateSummary) && content.includes(privateProgress)), '删除前历史仍保留原始项目记录');
+}));
+
+
+test('Agent 新节点必须说明真实依赖或独立原因，失败不留下散点', async () => isolated(async ({ store, service }) => {
+  const attached = await createBoundProject(service(), store());
+  const before = await store().read();
+  const base = { type: 'node.create', projectId: attached.binding.projectId, title: '新成果' };
+  for (const [index, plan] of [ {}, { dependsOn: [] }, { dependsOn: [], independentReason: '   ' }, { dependsOn: [attached.nodeIdsByKey.analysis], independentReason: '矛盾' }, { dependsOn: [attached.nodeIdsByKey.analysis, attached.nodeIdsByKey.analysis] }, { dependsOn: ['n-brief'] }, { dependsOn: ['missing-node'] } ].entries()) {
+    await assert.rejects(service().change(request(store(), { session, expectedRevision: before.revision, clientOperationId: `bad-plan-${index}`, change: { ...base, ...plan } })));
+    assert.deepEqual(await store().read(), before);
+  }
+  const req = request(store(), { session, expectedRevision: before.revision, clientOperationId: 'atomic-node', change: { ...base, dependsOn: [attached.nodeIdsByKey.analysis] } });
+  const saved = await service().change(req);
+  const after = await store().read();
+  assert.equal(after.nodes.length, before.nodes.length + 1);
+  assert.ok(after.edges.some(edge => edge.source === attached.nodeIdsByKey.analysis && edge.target === saved.saved.id));
+  assert.deepEqual(await service().change(req), saved);
+  assert.deepEqual(await store().read(), after);
+  const independent = await service().change(request(store(), { session, expectedRevision: after.revision, clientOperationId: 'independent', change: { ...base, dependsOn: [], independentReason: '无需上游成果' } }));
+  assert.equal((await store().read()).nodes.find(node => node.id === independent.saved.id).independentReason, '无需上游成果');
+  assert.match((await service().context(request(store(), { session, nodeId: independent.saved.id }))).markdown, /创建时独立原因[\s\S]*无需上游成果/);
+}));
+
+test('attach 不再把省略依赖默认成独立，已归档上游创建原子失败', async () => isolated(async ({ store, service }) => {
+  await assert.rejects(createBoundProject(service(), store(), { create: { title: '缺失关系', nodes: [{ key: 'a', title: 'A' }] }, nodeKey: 'a' }), /dependsOn/);
+  assert.equal((await store().read()).revision, 0);
+  const attached = await createBoundProject(service(), store());
+  await store().change(attached.revision, { type: 'node.update', id: attached.nodeIdsByKey.page, patch: { archived: true } });
+  const before = await store().read();
+  await assert.rejects(service().change(request(store(), { session, expectedRevision: before.revision, clientOperationId: 'archived-dependency', change: { type: 'node.create', projectId: attached.binding.projectId, title: '不能连归档', dependsOn: [attached.nodeIdsByKey.page] } })), /未归档/);
+  assert.deepEqual(await store().read(), before);
+}));
+
+
+test('旧版本已成功的无依赖声明请求仍能重放原回执', async () => isolated(async ({ store, service }) => {
+  const legacyAttach = request(store(), { session, clientOperationId: 'legacy-attach', expectedRevision: 0, create: { title: '旧版本项目', nodes: [{ key: 'a', title: '旧节点' }] } });
+  const attached = await service().attach({ ...legacyAttach, create: { ...legacyAttach.create, nodes: [{ ...legacyAttach.create.nodes[0], dependsOn: [], independentReason: '独立测试' }] } });
+  const legacyChange = request(store(), { session, clientOperationId: 'legacy-change', expectedRevision: attached.revision, change: { type: 'node.create', projectId: attached.binding.projectId, title: '旧追加节点' } });
+  const created = await service().change({ ...legacyChange, change: { ...legacyChange.change, dependsOn: [], independentReason: '独立测试' } });
+  // Seed the historical request hashes: old successful receipts have no declaration fields.
+  const canonical = value => value === null || typeof value !== 'object' ? JSON.stringify(value) : Array.isArray(value) ? `[${value.map(canonical).join(',')}]` : `{${Object.keys(value).filter(key => value[key] !== undefined).sort().map(key => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`;
+  await store().transact(board => {
+    for (const [kind, req] of [['attach', legacyAttach], ['change', legacyChange]]) {
+      const { boardInstanceId, clientOperationId, ...content } = req;
+      content.session = { host: session.host, profileId: session.profileId, sessionId: session.sessionId };
+      board.agentOperations.find(operation => operation.id === clientOperationId).requestHash = createHash('sha256').update(canonical({ kind, request: content })).digest('hex');
+    }
+    board.revision++;
+    return { next: board, result: null };
+  });
+  const before = await store().read();
+  assert.deepEqual(await service().attach(legacyAttach), attached);
+  assert.deepEqual(await service().change(legacyChange), created);
+  assert.deepEqual(await store().read(), before);
 }));

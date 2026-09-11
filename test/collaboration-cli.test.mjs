@@ -40,9 +40,8 @@ async function isolated(run) {
 test('CLI 将对话规划、上游交付、下游接续和最终成果保存到同一服务', async () => isolated(async ({ directory, board, cli, save, restart }) => {
   const createdProject = await save(['create-project', '协作接口测试', '--summary', '仅为隔离测试。']);
   const project = (await board()).projects.find(item => item.id === createdProject.binding.projectId);
-  const up = (await save(['create-node', project.id, '--title', '整理原件'])).saved;
-  const down = (await save(['create-node', project.id, '--title', '接续汇总'])).saved;
-  await save(['connect', up.id, '--to', down.id]);
+  const up = (await save(['create-node', project.id, '--title', '整理原件', '--independent-reason', '直接整理用户原件，没有上游节点。'])).saved;
+  const down = (await save(['create-node', project.id, '--title', '接续汇总', '--depends-on', up.id])).saved;
   await save(['update', up.id, '--owner', '已安排但未开始的执行者']);
   let overview = await cli(['overview', project.id]);
   assert.deepEqual(overview.doingIds, []);
@@ -91,6 +90,21 @@ test('CLI 将对话规划、上游交付、下游接续和最终成果保存到�
   assert.deepEqual(await board(), beforeRestart);
 }));
 
+test('CLI 新节点要求显式依赖声明并保留多个实际上游', async () => isolated(async ({ board, save }) => {
+  const project = (await save(['create-project', '显式依赖测试'])).binding.projectId;
+  const before = await board();
+  await assert.rejects(save(['create-node', project, '--title', '未声明']), /请提供 --independent-reason/);
+  await assert.rejects(save(['create-node', project, '--title', '空理由', '--independent-reason', ' ']), /请提供 --independent-reason/);
+  assert.deepEqual(await board(), before);
+  const first = (await save(['create-node', project, '--title', '资料甲', '--independent-reason', '用户独立提供的甲资料。'])).saved;
+  const second = (await save(['create-node', project, '--title', '资料乙', '--independent-reason', '用户独立提供的乙资料。'])).saved;
+  await assert.rejects(save(['create-node', project, '--title', '混合声明', '--depends-on', first.id, '--independent-reason', '不应混用']), /不能同时提供/);
+  const combined = (await save(['create-node', project, '--title', '汇总', '--depends-on', first.id, '--depends-on', second.id])).saved;
+  const current = await board();
+  assert.deepEqual(current.edges.filter(edge => edge.target === combined.id).map(edge => edge.source).sort(), [first.id, second.id].sort());
+  assert.equal(current.nodes.find(node => node.id === first.id).independentReason, '用户独立提供的甲资料。');
+}));
+
 test('CLI 写入必须复用显式接入与真实会话，旧中断和伪造 profile 不能旁路', async () => isolated(async ({ directory, profile, board, cli, save, url, onboarding }) => {
   const cleanEnv = { ...process.env };
   delete cleanEnv.JARVISYNC_CONNECTION;
@@ -101,7 +115,7 @@ test('CLI 写入必须复用显式接入与真实会话，旧中断和伪造 pro
   await assert.rejects(runRaw(['create-project', '无操作号', '--url', url(), '--connection', profile.configPath, '--session', 'real-cli-session', '--expected-revision', String((await board()).revision)]), /写入需要 --operation-id/);
 
   const created = await save(['create-project', '中断边界']);
-  const node = (await save(['create-node', created.binding.projectId, '--title', '当前节点'])).saved;
+  const node = (await save(['create-node', created.binding.projectId, '--title', '当前节点', '--independent-reason', '独立检查中断边界。'])).saved;
   const discovered = await cli(['discover']);
   assert.equal(discovered.binding.projectId, created.binding.projectId);
   const config = await loadConnection(profile.configPath);
@@ -124,14 +138,14 @@ test('CLI 写入必须复用显式接入与真实会话，旧中断和伪造 pro
 test('结构化写入拒绝旧版本、跨项目反馈关联和伪装的人类来源', async () => isolated(async ({ directory, board, cli, cliAs, save, url }) => {
   const projectResult = await save(['create-project', '来源边界测试']);
   const project = (await board()).projects.find(item => item.id === projectResult.binding.projectId);
-  const node = (await save(['create-node', project.id, '--title', '当前任务'])).saved;
+  const node = (await save(['create-node', project.id, '--title', '当前任务', '--independent-reason', '独立检查来源边界。'])).saved;
   await assert.rejects(save(['create-project', '其他项目']), /切换到其他项目需要用户确认/);
   const otherProjectResponse = await fetch(`${url()}/api/human/change`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: url(), 'X-JarviSync-UI': '1' }, body: JSON.stringify({ expectedRevision: (await board()).revision, change: { type: 'project.create', title: '其他项目', summary: '' } }) });
   assert.equal(otherProjectResponse.status, 200);
   const other = (await otherProjectResponse.json()).projects.at(-1);
   const alternateSession = 'cli-other-project-session';
   await cliAs(alternateSession, ['attach', other.id, '--expected-revision', String((await board()).revision), '--operation-id', 'other-attach']);
-  const otherNodeResult = await cliAs(alternateSession, ['create-node', other.id, '--title', '其他任务', '--expected-revision', String((await board()).revision), '--operation-id', 'other-create-node']);
+  const otherNodeResult = await cliAs(alternateSession, ['create-node', other.id, '--title', '其他任务', '--independent-reason', '另一项目的独立任务。', '--expected-revision', String((await board()).revision), '--operation-id', 'other-create-node']);
   const otherNode = otherNodeResult.saved;
   const input = (await save(['transcribe', project.id, '--kind', 'goal', '--body', '仅做当前任务。', '--source-ref', 'test:message', '--recorded-by', '测试记录者'])).saved;
   const rawBefore = await readFile(join(directory, 'board.json'), 'utf8');

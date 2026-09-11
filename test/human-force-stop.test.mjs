@@ -79,8 +79,8 @@ async function startRun(fixture, session, operation, nodeId) {
 test('项目人工结束精确结束快照中的全部活动运行，保留内容并隔离其他项目', async () => isolated(async fixture => {
   const { store, service } = fixture;
   const first = await createProject(fixture, sessionA, 'multi-a', '目标项目', [
-    { key: 'a', title: '任务 A' },
-    { key: 'b', title: '任务 B' },
+    { key: 'a', dependsOn: [], independentReason: '独立测试任务，无需上游成果', title: '任务 A' },
+    { key: 'b', dependsOn: [], independentReason: '独立测试任务，无需上游成果', title: '任务 B' },
   ], 'a');
   const nodeA = first.nodeIdsByKey.a;
   const nodeB = first.nodeIdsByKey.b;
@@ -91,7 +91,7 @@ test('项目人工结束精确结束快照中的全部活动运行，保留内�
   await attachNode(fixture, sessionB, 'multi-b', first.binding.projectId, nodeB);
   const runB = await startRun(fixture, sessionB, 'multi-b-start', nodeB);
 
-  const other = await createProject(fixture, sessionC, 'other', '其他项目', [{ key: 'c', title: '任务 C' }], 'c');
+  const other = await createProject(fixture, sessionC, 'other', '其他项目', [{ key: 'c', dependsOn: [], independentReason: '独立测试任务，无需上游成果', title: '任务 C' }], 'c');
   const runC = await startRun(fixture, sessionC, 'other-start', other.nodeIdsByKey.c);
 
   const duplicateBindingId = `b-${randomUUID()}`;
@@ -159,8 +159,8 @@ test('项目人工结束精确结束快照中的全部活动运行，保留内�
 test('项目快照、节点 runId、全局版本和字段校验任一不匹配都不产生部分结束', async () => isolated(async fixture => {
   const { store, service } = fixture;
   const attached = await createProject(fixture, sessionA, 'cas', '快照项目', [
-    { key: 'a', title: '任务 A' },
-    { key: 'b', title: '任务 B' },
+    { key: 'a', dependsOn: [], independentReason: '独立测试任务，无需上游成果', title: '任务 A' },
+    { key: 'b', dependsOn: [], independentReason: '独立测试任务，无需上游成果', title: '任务 B' },
   ], 'a');
   const runA = await startRun(fixture, sessionA, 'cas-a-start', attached.nodeIdsByKey.a);
   await attachNode(fixture, sessionB, 'cas-b', attached.binding.projectId, attached.nodeIdsByKey.b);
@@ -212,7 +212,7 @@ test('项目快照、节点 runId、全局版本和字段校验任一不匹配�
 
 test('节点人工结束撤销旧会话全部写入入口，context 可读且新会话仍可续作', async () => isolated(async fixture => {
   const { store, service } = fixture;
-  const attached = await createProject(fixture, sessionA, 'single', '单节点项目', [{ key: 'a', title: '任务 A' }], 'a');
+  const attached = await createProject(fixture, sessionA, 'single', '单节点项目', [{ key: 'a', dependsOn: [], independentReason: '独立测试任务，无需上游成果', title: '任务 A' }], 'a');
   const nodeId = attached.nodeIdsByKey.a;
   await change(fixture, sessionA, 'single-before', { type: 'node.update', id: nodeId, patch: { decisions: '人工结束后仍保留' } });
   const started = await startRun(fixture, sessionA, 'single-start', nodeId);
@@ -281,7 +281,7 @@ test('节点人工结束撤销旧会话全部写入入口，context 可读且新
       session: sessionA,
       clientOperationId: 'removed-session-create',
       expectedRevision: afterRemovalRevision,
-      create: { title: '不应重建', summary: '', nodes: [{ key: 'x', title: '不应创建' }] },
+      create: { title: '不应重建', summary: '', nodes: [{ key: 'x', dependsOn: [], independentReason: '独立测试任务，无需上游成果', title: '不应创建' }] },
       nodeKey: 'x',
     })),
     () => service.change(request(store, {
@@ -309,7 +309,7 @@ test('节点人工结束撤销旧会话全部写入入口，context 可读且新
   }
   assert.equal((await store.read()).revision, afterRemovalRevision);
 
-  const fresh = await createProject(fixture, freshAfterRemovalSession, 'fresh-after-removal', '删除后新工作', [{ key: 'fresh', title: '新任务' }], 'fresh');
+  const fresh = await createProject(fixture, freshAfterRemovalSession, 'fresh-after-removal', '删除后新工作', [{ key: 'fresh', dependsOn: [], independentReason: '独立测试任务，无需上游成果', title: '新任务' }], 'fresh');
   const freshRun = await startRun(fixture, freshAfterRemovalSession, 'fresh-after-removal-start', fresh.nodeIdsByKey.fresh);
   assert.ok(freshRun.runId);
   assert.equal((await store.read()).nodes.find(node => node.id === fresh.nodeIdsByKey.fresh).status, 'doing');
@@ -317,7 +317,7 @@ test('节点人工结束撤销旧会话全部写入入口，context 可读且新
 
 test('已结束或已被后续运行替代的目标不能再次人工结束', async () => isolated(async fixture => {
   const { store } = fixture;
-  const attached = await createProject(fixture, sessionA, 'expired', '过期目标项目', [{ key: 'a', title: '任务 A' }], 'a');
+  const attached = await createProject(fixture, sessionA, 'expired', '过期目标项目', [{ key: 'a', dependsOn: [], independentReason: '独立测试任务，无需上游成果', title: '任务 A' }], 'a');
   const nodeId = attached.nodeIdsByKey.a;
   const first = await startRun(fixture, sessionA, 'expired-first', nodeId);
   let board = await store.read();
@@ -389,7 +389,7 @@ test('项目范围 HTTP 在人工结束后允许只读墓碑，并在归档删�
       session,
       clientOperationId: 'http-stale-create',
       expectedRevision: board.revision,
-      create: { title: '旧会话不应新建', summary: '', nodes: [{ key: 'x', title: '不应创建' }] },
+      create: { title: '旧会话不应新建', summary: '', nodes: [{ key: 'x', dependsOn: [], independentReason: '独立测试任务，无需上游成果', title: '不应创建' }] },
       nodeKey: 'x',
     }), error => error.status === 409 && error.details?.code === 'human-ended' && error.details.humanEndedAt === humanEndedAt);
     await assert.rejects(client.change({

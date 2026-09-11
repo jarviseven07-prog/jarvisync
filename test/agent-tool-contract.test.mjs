@@ -24,7 +24,7 @@ test('工具预检明确拒绝缺失验证值和不完整节点参数，不发�
   assert.equal(calls, 0);
   const definition = toolDefinitions.find(tool => tool.name === 'jarvisync_change').inputSchema.properties.change;
   const create = definition.oneOf.find(item => item.properties.type.const === 'node.create');
-  assert.deepEqual(create.required, ['type', 'projectId', 'title']);
+  assert.deepEqual(create.required, ['type', 'projectId', 'title', 'dependsOn']);
   assert.equal(create.additionalProperties, false);
   assert.deepEqual(toolDefinitions.find(tool => tool.name === 'jarvisync_verify').inputSchema.oneOf[2].required, ['challenge', 'receipt']);
 });
@@ -53,15 +53,15 @@ test('真实工具可验证、在执行期间建立并补充后续节点、交�
   const challenge = (await execute('jarvisync_verify', { sessionId, phase: 'read' })).challenge;
   const receipt = (await execute('jarvisync_verify', { sessionId, phase: 'write', challenge })).receipt;
   assert.equal((await execute('jarvisync_verify', { sessionId, phase: 'readback', challenge, receipt })).verified, true);
-  const attached = await execute('jarvisync_attach', { sessionId, expectedRevision: initial.revision, clientOperationId: 'attach', create: { title: '顺序成果', nodes: [{ key: 'first', title: '第一项' }] }, nodeKey: 'first' });
+  const attached = await execute('jarvisync_attach', { sessionId, expectedRevision: initial.revision, clientOperationId: 'attach', create: { title: '顺序成果', nodes: [{ key: 'first', dependsOn: [], independentReason: '独立测试任务，无需上游成果', title: '第一项' }] }, nodeKey: 'first' });
   const first = attached.binding.nodeId;
   const started = await execute('jarvisync_start', { sessionId, expectedRevision: attached.revision, clientOperationId: 'start', nodeId: first, owner: '真实测试宿主' });
-  const second = await execute('jarvisync_change', { sessionId, expectedRevision: started.revision, clientOperationId: 'second', change: { type: 'node.create', projectId: attached.binding.projectId, title: '新增独立成果' } });
+  const second = await execute('jarvisync_change', { sessionId, expectedRevision: started.revision, clientOperationId: 'second', change: { type: 'node.create', projectId: attached.binding.projectId, title: '新增依赖成果', dependsOn: [first] } });
   assert.equal(second.binding.nodeId, first);
   assert.equal(second.binding.runId, started.runId);
   const planned = await execute('jarvisync_change', { sessionId, expectedRevision: second.revision, clientOperationId: 'plan-second', change: { type: 'node.update', id: second.saved.id, patch: { goal: '新增要求', next: '完成第二项', owner: 'Codex', model: '计划模型' } } });
-  const linked = await execute('jarvisync_change', { sessionId, expectedRevision: planned.revision, clientOperationId: 'link', change: { type: 'edge.create', projectId: attached.binding.projectId, source: first, target: second.saved.id } });
-  const delivered = await execute('jarvisync_deliver', { sessionId, expectedRevision: linked.revision, clientOperationId: 'deliver', nodeId: first, runId: started.runId, summary: '第一项完成' });
+  assert.ok((await app.store.read()).edges.some(edge => edge.source === first && edge.target === second.saved.id));
+  const delivered = await execute('jarvisync_deliver', { sessionId, expectedRevision: planned.revision, clientOperationId: 'deliver', nodeId: first, runId: started.runId, summary: '第一项完成' });
   const next = await execute('jarvisync_attach', { sessionId, expectedRevision: delivered.revision, clientOperationId: 'next', nodeId: second.saved.id });
   assert.equal(next.binding.nodeId, second.saved.id);
   assert.equal(next.binding.projectId, attached.binding.projectId);
@@ -70,4 +70,14 @@ test('真实工具可验证、在执行期间建立并补充后续节点、交�
   const node = board.nodes.find(item => item.id === second.saved.id);
   assert.equal(node.goal, '新增要求');
   assert.equal(node.executions?.length || 0, 0);
+});
+
+
+test('MCP 新建节点拒绝遗漏依赖、空白独立原因与重复引用', async () => {
+  let calls = 0;
+  const execute = createToolHandler({ host: 'codex', profileId: 'p' }, { change: async () => { calls++; } });
+  for (const plan of [{}, { dependsOn: [] }, { dependsOn: [], independentReason: '  ' }, { dependsOn: ['n', 'n'] }, { dependsOn: ['n'], independentReason: '矛盾' }]) {
+    await assert.rejects(execute('jarvisync_change', { sessionId: 's', clientOperationId: 'bad', expectedRevision: 0, change: { type: 'node.create', projectId: 'p', title: '新任务', ...plan } }));
+  }
+  assert.equal(calls, 0);
 });
