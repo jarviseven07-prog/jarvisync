@@ -9,7 +9,7 @@ using System.Windows.Forms;
 [assembly: AssemblyDescription("JarviSync 看板")]
 [assembly: AssemblyProduct("JarviSync")]
 [assembly: AssemblyCompany("Jarvis")]
-[assembly: AssemblyVersion("0.1.1.0")]
+[assembly: AssemblyVersion("0.1.2.0")]
 
 internal static class Launcher
 {

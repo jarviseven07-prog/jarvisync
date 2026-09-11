@@ -132,7 +132,7 @@ export async function runMcp(config, { input = process.stdin, output = process.s
     const reply = result => send({ jsonrpc: '2.0', id: request.id, result });
     if (request.method === 'initialize') {
       initialized = true;
-      reply({ protocolVersion: ['2024-11-05','2025-03-26','2025-06-18','2025-11-25'].includes(request.params?.protocolVersion) ? request.params.protocolVersion : '2025-11-25', capabilities: { tools: {} }, serverInfo: { name: 'jarvisync', version: '0.1.1' }, instructions: 'JarviSync 本机协作：会话身份从宿主入口获取。明确交办的工作先发现并关联项目，再开始/记录/交付；普通问答和用户要求不记录的内容不建档。服务离线保留回执，用户中断立即尊重。工具连接不等于任务执行。' });
+      reply({ protocolVersion: ['2024-11-05','2025-03-26','2025-06-18','2025-11-25'].includes(request.params?.protocolVersion) ? request.params.protocolVersion : '2025-11-25', capabilities: { tools: {} }, serverInfo: { name: 'jarvisync', version: '0.1.2' }, instructions: 'JarviSync 本机协作：会话身份从宿主入口获取。明确交办的工作先发现并关联项目，再开始/记录/交付；普通问答和用户要求不记录的内容不建档。服务离线保留回执，用户中断立即尊重。工具连接不等于任务执行。' });
     } else if (request.method === 'ping') reply({});
     else if (!initialized) send({ jsonrpc: '2.0', id: request.id, error: { code: -32000, message: '请先初始化。' } });
     else if (request.method === 'tools/list') reply({ tools: toolDefinitions });

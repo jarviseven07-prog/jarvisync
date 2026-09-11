@@ -1,5 +1,5 @@
 name: jarvisync-hermes
-version: 0.1.1
+version: 0.1.2
 description: "Local JarviSync onboarding, lifecycle receipts, and MCP guidance for Hermes."
 author: "Local developer"
 kind: standalone

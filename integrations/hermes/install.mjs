@@ -1,4 +1,5 @@
-import { cp, mkdir, readFile, rm, stat } from 'node:fs/promises';
+import { cp, lstat, mkdir, readFile, realpath, rename, rm, stat } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -114,6 +115,8 @@ export async function installHermes({ profile, executable, run, homeDir, hostEnv
   const target = resolve(pluginsRoot, 'jarvisync-hermes');
   if (!inside(pluginsRoot, target)) throw new Error('Hermes 插件目录不安全，已取消安装。');
   const targetExists = await exists(target);
+  if (targetExists && (await lstat(target)).isSymbolicLink()) throw new Error('Hermes 插件目录不能是符号链接，已取消安装。');
+  if (inside(target, source) || inside(source, target)) throw new Error('Hermes 插件源与安装目录不能重叠，已取消安装。');
   const existingMcp = await currentMcp(run);
   if (targetExists && !await targetBelongsToProfile(target, profile)) {
     throw new Error('Hermes 已有不属于当前接入的 JarviSync 插件目录。为避免覆盖，已取消安装。');
@@ -122,14 +125,41 @@ export async function installHermes({ profile, executable, run, homeDir, hostEnv
     throw new Error('Hermes 已有不属于当前接入的 jarvisync MCP 配置。为避免覆盖，已取消安装。');
   }
 
-  let copied = false;
+  let swapped = false;
+  let backedUp = false;
   let mcpWritten = false;
+  const suffix = randomUUID();
+  const staging = resolve(pluginsRoot, `.jarvisync-stage-${suffix}`);
+  const backup = resolve(pluginsRoot, `.jarvisync-backup-${suffix}`);
+  let canonicalRoot;
+  // Every rename/delete stays at a checked direct child of this Hermes home.
+  const checkPath = async path => {
+    if (![target, staging, backup].includes(path) || dirname(path) !== pluginsRoot || !inside(pluginsRoot, path)
+      || await realpath(pluginsRoot) !== canonicalRoot) throw new Error('Hermes 安装目录在操作期间发生变化，已停止。');
+    const entry = await lstat(path).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
+    if (entry?.isSymbolicLink() || (entry && dirname(await realpath(path)) !== canonicalRoot)) throw new Error('Hermes 安装路径超出确认范围，已停止。');
+  };
+  const safeRemove = async path => { await checkPath(path); await rm(path, { recursive: true, force: true }); };
+  const safeRename = async (from, to) => { await checkPath(from); await checkPath(to); await rename(from, to); };
+  const copyOptions = { recursive: true, filter: async path => {
+    if (basename(path) === '__pycache__' || /\.py[co]$/i.test(path)) return false;
+    if ((await lstat(path)).isSymbolicLink()) throw new Error('Hermes 插件包含符号链接，已取消安装。');
+    return true;
+  } };
   try {
     await mkdir(pluginsRoot, { recursive: true });
-    if (!targetExists) {
-      await cp(source, target, { recursive: true, errorOnExist: true, force: false });
-      copied = true;
+    canonicalRoot = await realpath(pluginsRoot);
+    await checkPath(staging);
+    await checkPath(backup);
+    // Retain local state/extra files, then overlay only the newly prepared package.
+    if (targetExists) await cp(target, staging, copyOptions);
+    await cp(source, staging, copyOptions);
+    if (targetExists) {
+      await safeRename(target, backup);
+      backedUp = true;
     }
+    await safeRename(staging, target);
+    swapped = true;
     await run(['plugins', 'enable', 'jarvisync-hermes', '--no-allow-tool-override']);
     if (!existingMcp) {
       await run(['config', 'set', 'mcp_servers.jarvisync', JSON.stringify(mcp)]);
@@ -138,11 +168,17 @@ export async function installHermes({ profile, executable, run, homeDir, hostEnv
   } catch (error) {
     const rollbackErrors = [];
     if (mcpWritten) await run(['config', 'unset', 'mcp_servers.jarvisync']).catch(reason => rollbackErrors.push(String(reason)));
-    if (copied) await run(['plugins', 'disable', 'jarvisync-hermes']).catch(reason => rollbackErrors.push(String(reason)));
-    if (copied) await rm(target, { recursive: true, force: true }).catch(reason => rollbackErrors.push(String(reason)));
+    if (swapped && !targetExists) await run(['plugins', 'disable', 'jarvisync-hermes']).catch(reason => rollbackErrors.push(String(reason)));
+    if (swapped) await safeRemove(target).catch(reason => rollbackErrors.push(String(reason)));
+    if (backedUp) await safeRename(backup, target).catch(reason => rollbackErrors.push(String(reason)));
+    if (canonicalRoot) await safeRemove(staging).catch(reason => rollbackErrors.push(String(reason)));
     if (rollbackErrors.length) error.message += ` 安装回滚未完全完成：${rollbackErrors.join('；')}`;
     throw error;
   }
+
+  // Cleanup follows the committed host operation; never roll back to a backup
+  // whose cleanup may already have partially succeeded.
+  if (backedUp) await safeRemove(backup);
 
   return { home, pluginRoot: target, mcpName: 'jarvisync', reused: targetExists };
 }

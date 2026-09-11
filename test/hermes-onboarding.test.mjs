@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -118,16 +118,19 @@ test('Hermes installer refuses an existing plugin from a different prepared prof
   const source = fileURLToPath(new URL('../integrations/hermes/plugin/', import.meta.url));
   const prepared = join(home, 'prepared-plugin');
   const foreign = join(home, 'plugins', 'jarvisync-hermes');
+  const calls = [];
   await cp(source, prepared, { recursive: true });
   await mkdir(join(prepared, 'runtime'), { recursive: true });
   await writeFile(join(prepared, 'runtime', 'connection.json'), JSON.stringify({ host: 'hermes', profileId: 'profile-a' }), 'utf8');
   await mkdir(join(foreign, 'runtime'), { recursive: true });
   await writeFile(join(foreign, 'runtime', 'connection.json'), JSON.stringify({ host: 'hermes', profileId: 'profile-b' }), 'utf8');
+  await writeFile(join(foreign, '__init__.py'), 'foreign plugin must remain');
   const concrete = join(prepared, '.mcp.json');
   await writeFile(concrete, JSON.stringify({ mcpServers: { jarvisync: { command: process.execPath, args: [join(prepared, 'runtime', 'mcp.mjs')] } } }), 'utf8');
   try {
     await assert.rejects(
       installHermes({ profile: { id: 'profile-a', host: 'hermes', pluginRoot: prepared, mcpConfigPath: concrete }, executable: join(home, 'bin', 'hermes.exe'), hostEnv: { HERMES_HOME: home }, run: async args => {
+        calls.push(args);
         if (args.slice(0, 3).join(' ') === 'config get mcp_servers.jarvisync') {
           const error = new Error('Config key not set: mcp_servers.jarvisync'); error.stderr = error.message; throw error;
         }
@@ -135,6 +138,58 @@ test('Hermes installer refuses an existing plugin from a different prepared prof
       } }),
       /不属于当前接入/,
     );
+    assert.equal(await readFile(join(foreign, '__init__.py'), 'utf8'), 'foreign plugin must remain');
+    assert.deepEqual(calls.map(args => args.slice(0, 2)), [['config', 'get']]);
+    assert.deepEqual(await readdir(join(home, 'plugins')), ['jarvisync-hermes']);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+for (const failEnable of [false, true]) test(`Hermes existing package ${failEnable ? 'restores old files on enable failure' : 'upgrades files and preserves state'}`, async () => {
+  const home = await mkdtemp(join(tmpdir(), 'jarvisync-hermes-upgrade-'));
+  const prepared = join(home, 'prepared');
+  const target = join(home, 'plugins', 'jarvisync-hermes');
+  const connection = { host: 'hermes', profileId: 'upgrade-profile', stateDir: join(home, 'session-state') };
+  const entry = { command: process.execPath, args: [join(prepared, 'runtime', 'mcp.mjs')], env: {}, enabled: true, connect_timeout: 15, tools: { resources: false, prompts: false } };
+  const calls = [];
+  try {
+    for (const directory of [prepared, target]) {
+      await mkdir(join(directory, 'runtime'), { recursive: true });
+      await writeFile(join(directory, 'runtime', 'connection.json'), JSON.stringify(connection));
+      for (const file of ['runtime/client.mjs', 'runtime/mcp.mjs', 'runtime/hook.mjs', '__init__.py', 'plugin.yaml']) {
+        await writeFile(join(directory, file), directory === prepared ? `new:${file}` : `old:${file}`);
+      }
+    }
+    await writeFile(join(prepared, '.mcp.json'), JSON.stringify({ mcpServers: { jarvisync: entry } }));
+    await writeFile(join(target, 'local-state.json'), '{"recording":false}');
+    await mkdir(connection.stateDir);
+    await writeFile(join(connection.stateDir, 'session.json'), '{"nodeId":"preserved"}');
+    await mkdir(join(target, '__pycache__'));
+    await writeFile(join(target, '__pycache__', 'old.pyc'), 'stale python bytecode');
+    const install = () => installHermes({
+      profile: { id: connection.profileId, host: 'hermes', pluginRoot: prepared, mcpConfigPath: join(prepared, '.mcp.json') },
+      executable: join(home, 'bin', 'hermes.exe'), hostEnv: { HERMES_HOME: home },
+      run: async args => {
+        calls.push(args);
+        if (args[0] === 'config' && args[1] === 'get') return { stdout: JSON.stringify(entry) };
+        if (args[0] === 'plugins' && args[1] === 'enable') {
+          assert.equal(await readFile(join(target, '__init__.py'), 'utf8'), 'new:__init__.py');
+          if (failEnable) throw new Error('enable failed');
+        }
+        return { stdout: '' };
+      },
+    });
+    if (failEnable) await assert.rejects(install(), /enable failed/);
+    else assert.equal((await install()).reused, true);
+    for (const file of ['runtime/client.mjs', 'runtime/mcp.mjs', 'runtime/hook.mjs', '__init__.py', 'plugin.yaml']) {
+      assert.equal(await readFile(join(target, file), 'utf8'), `${failEnable ? 'old' : 'new'}:${file}`);
+    }
+    assert.equal(await readFile(join(target, 'local-state.json'), 'utf8'), '{"recording":false}');
+    assert.equal(await readFile(join(connection.stateDir, 'session.json'), 'utf8'), '{"nodeId":"preserved"}');
+    assert.deepEqual(await readdir(join(home, 'plugins')), ['jarvisync-hermes']);
+    if (!failEnable) assert.equal((await readdir(target)).includes('__pycache__'), false);
+    assert.deepEqual(calls.map(args => args.slice(0, 2)), [['config', 'get'], ['plugins', 'enable']]);
   } finally {
     await rm(home, { recursive: true, force: true });
   }
@@ -169,7 +224,7 @@ test('Hermes installer derives a Windows bin home when no explicit isolated home
 
 test('Hermes pre_llm_call reads fresh active cache, throttles checks and rejects unsafe cache', async () => {
   const { spawnSync } = await import('node:child_process');
-  const result = spawnSync('python', ['-c', String.raw`
+  const result = spawnSync('python', ['-B', '-c', String.raw`
 import importlib.util, json, tempfile, pathlib, hashlib, datetime, sys
 spec = importlib.util.spec_from_file_location('jarvisync_test', sys.argv[1])
 p = importlib.util.module_from_spec(spec)

@@ -10,7 +10,7 @@
 
 > 当前为早期版本，界面为中文；已验证的运行平台是 Windows，macOS 和 Linux 尚未验证。
 
-[下载 v0.1.1](https://github.com/jarviseven07-prog/jarvisync/releases/tag/v0.1.1) ·
+[下载 v0.1.2](https://github.com/jarviseven07-prog/jarvisync/releases/tag/v0.1.2) ·
 [观看 30 秒工作流演示](https://github.com/jarviseven07-prog/jarvisync/releases/download/v0.1.0/JarviSync-Workflow-30s.mp4)
 
 视频使用重构的 UI 与虚构案例说明工作流，不是真实 Agent 执行过程的录屏。
@@ -56,7 +56,8 @@
 
 ## 快速开始
 
-v0.1.1 增加阶段提醒，以及建点时同时保存依赖连线。Agent 新建节点须明确上游；
+v0.1.2 包含阶段提醒、建点时同时保存依赖连线，以及已有 Hermes 插件的升级修复。
+Agent 新建节点须明确上游；
 确实独立时说明原因。现有节点和连线不会被自动重排或补造关系。
 活动执行约十分钟没有新进展写回时，宿主会在支持的事件中限频提醒核对阶段成果，
 仍由 Agent 判断是否已有事实可写；系统不会代写进展或判定完成。
@@ -66,7 +67,7 @@ v0.1.1 增加阶段提醒，以及建点时同时保存依赖连线。Agent 新�
 需要回退旧版时保留并使用升级前备份。
 
 **Windows x64 便携版：**从
-[v0.1.1 发布页](https://github.com/jarviseven07-prog/jarvisync/releases/tag/v0.1.1)
+[v0.1.2 发布页](https://github.com/jarviseven07-prog/jarvisync/releases/tag/v0.1.2)
 下载桌面 ZIP，完整解压后打开其中的 `JarviSync.exe`，保留同目录的其它文件。
 便携版自带运行时，无需另装 Node.js。
 
@@ -75,7 +76,7 @@ v0.1.1 增加阶段提醒，以及建点时同时保存依赖连线。Agent 新�
 ```bash
 git clone https://github.com/jarviseven07-prog/jarvisync.git
 cd jarvisync
-git checkout v0.1.1
+git checkout v0.1.2
 npm ci
 npm run build
 ```
