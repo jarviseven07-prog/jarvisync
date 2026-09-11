@@ -8,6 +8,15 @@
 
 [English](README.md) | [中文](README_CN.md)
 
+> 当前为早期版本，界面为中文；已验证的运行平台是 Windows，macOS 和 Linux 尚未验证。
+
+[下载 v0.1.0](https://github.com/jarviseven07-prog/jarvisync/releases/tag/v0.1.0) ·
+[观看 30 秒工作流演示](https://github.com/jarviseven07-prog/jarvisync/releases/download/v0.1.0/JarviSync-Workflow-30s.mp4)
+
+视频使用重构的 UI 与虚构案例说明工作流，不是真实 Agent 执行过程的录屏。
+
+![Windows 桌面版内置示例画布](docs/images/board.png)
+
 ---
 
 ## 要解决的问题
@@ -23,21 +32,22 @@
 
 - **进展可见。** 每个节点显示实际做了什么、谁做的、卡在哪——因为每个 Agent
   自己把回执写回来。
-- **上下文共享。** A 节点交付的成果留在节点上，B 节点直接从「上游成果」里读，
-  不用人再搬一次。
+- **上下文共享。** A 节点交付的成果留在节点上，B 节点直接读取上游交付摘要和成果链接。
+  链接指向的文件按需读取，看板不会自动广播全部原文。
 - **多项目并行也不乱。** 摘要统计哪些在跑、哪些能接着做、哪些在等你。
 - **任何 Agent 都能接。** 提供 Codex、Claude Code、Hermes 的本机接入包和通用
   MCP 工具，为同时用多个 Agent、多个模型的人准备。
 - **它是梯子，不是笼子。** 看板负责结构，往上搭什么是你的事。
 
-数据全部留在本机，服务只监听本地地址。
+看板数据保存在本机，服务只监听本地地址。宿主 Agent 可能将读到的内容发送给模型
+服务商；这取决于宿主与服务商设置，本地保存不代表模型调用也不外发数据。
 
 ## 它刻意不做的事
 
 这部分比功能清单更重要，因为同类工具最容易在这里过度承诺：
 
-- **不监控你的 Agent。** 看板从不轮询任何东西。你看到的是 Agent 自己选择写回
-  的内容。一个看起来没动静的节点，可能只是那个 Agent 没有汇报。
+- **不监控你的 Agent。** 进展来自 Agent 主动写回，不通过探测进程存活或监听
+  每条命令输出来判断。一个看起来没动静的节点，可能只是那个 Agent 没有汇报。
 - **不启动也不调度 Agent。** `start` 和 `stop` 只写回执，真正的启动和停止由宿主
   （Claude Code、Codex、Hermes……）完成。在节点上写了执行者或模型名，不代表
   有任何东西在运行。
@@ -46,10 +56,18 @@
 
 ## 快速开始
 
-需要 **Node.js 24 或更新版本**。
+**Windows x64 便携版：**从
+[v0.1.0 发布页](https://github.com/jarviseven07-prog/jarvisync/releases/tag/v0.1.0)
+下载桌面 ZIP，完整解压后打开其中的 `JarviSync.exe`，保留同目录的其它文件。
+便携版自带运行时，无需另装 Node.js。
+
+**从源码运行：**需要 **Git 和 Node.js 24 或更新版本**，在终端运行：
 
 ```bash
-npm install
+git clone https://github.com/jarviseven07-prog/jarvisync.git
+cd jarvisync
+git checkout v0.1.0
+npm ci
 npm run build
 ```
 
@@ -67,8 +85,9 @@ npm run start:server
 npm start
 ```
 
-两种模式的数据目录互相独立。`NODEBOARD_DATA_DIR` 可以指定位置。首次启动会生成
-一个明确标记的示例项目，新建项目为空白。
+两种模式的数据目录互相独立。网页服务用 `NODEBOARD_DATA_DIR` 指定数据目录；
+桌面应用用 `NODEBOARD_DESKTOP_DATA_DIR` 指定应用配置目录，业务数据保存在它的
+`data/` 子目录中。首次启动会生成一个明确标记的示例项目，新建项目为空白。
 
 开发时先起服务，再另开终端：
 
@@ -86,6 +105,11 @@ npm run dev:web
 | Claude Code | 插件 + MCP |
 | Codex | 插件 + MCP |
 | Hermes | 原生插件 + 独立 MCP 配置 |
+
+提供适配包不代表每个宿主和模型都已通过真实新会话验收。请在自己的环境中完成
+安装、宿主信任和读写验证，见[验证范围](docs/agent-onboarding.md#验证范围)。
+通用 stdio MCP 提供工具，不含原生会话 Hook；运行在远程机器上的 Agent 不能直接
+连接你的 localhost 服务。
 
 日常协作优先用宿主里的 JarviSync MCP 工具。也有 CLI：
 

@@ -1,6 +1,10 @@
 {
   "name": "nodeboard",
   "version": "0.1.0",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24"
+  },
   "private": true,
   "type": "module",
   "main": "desktop/main.cjs",

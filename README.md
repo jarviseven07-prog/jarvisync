@@ -10,7 +10,16 @@
 
 > **Note:** the interface is currently Chinese-only. The code, APIs and agent
 > integrations are language-neutral, but every label you see in the app is in
-> Chinese. English localization is not done yet.
+> Chinese. English localization is not done yet. This early release is tested
+> on Windows; macOS and Linux are not verified.
+
+[Download v0.1.0](https://github.com/jarviseven07-prog/jarvisync/releases/tag/v0.1.0) ·
+[Watch the 30-second workflow demo](https://github.com/jarviseven07-prog/jarvisync/releases/download/v0.1.0/JarviSync-Workflow-30s.mp4)
+
+The video uses a reconstructed UI and a fictional example to illustrate the
+workflow. It is not a recording of a live agent run.
+
+![Windows desktop with the built-in sample project](docs/images/board.png)
 
 ---
 
@@ -30,7 +39,8 @@ A single local canvas holding projects, nodes and their dependencies.
 - **Progress is visible.** Every node shows what was actually done, by whom,
   and what is blocked — because each agent writes its own receipts back.
 - **Context is shared.** When node A delivers a result, it stays on the node.
-  Node B reads it directly from its upstream results. Nobody carries it by hand.
+  Node B reads the upstream delivery summary and result links. Referenced files
+  are read on demand; the board does not broadcast their full contents.
 - **Several projects stay legible.** A summary counts what is running, what is
   unblocked, and what is waiting on you.
 - **Any agent can connect.** Integration packages for Codex, Claude Code and
@@ -39,16 +49,18 @@ A single local canvas holding projects, nodes and their dependencies.
 - **It is a ladder, not a cage.** The board stores structure; what you build on
   top of it is yours.
 
-Everything stays on your machine. The server binds to localhost only.
+The board stores its data on your machine and binds to localhost only. Your
+agent host may send content it reads to its model provider; that is governed by
+the host and provider settings, not by JarviSync's local storage.
 
 ## What it deliberately does not do
 
 This matters more than the feature list, because it is where similar tools
 oversell:
 
-- **It does not monitor your agents.** The board never polls anything. What you
-  see is what an agent chose to write back. A node that looks idle may be an
-  agent that simply has not reported.
+- **It does not monitor your agents.** Progress comes from what agents write
+  back, rather than process-liveness checks or command-output monitoring. A node
+  that looks idle may be an agent that simply has not reported.
 - **It does not launch or schedule agents.** `start` and `stop` record receipts;
   the actual starting and stopping is done by your host (Claude Code, Codex,
   Hermes…). Writing an owner or a model name onto a node does not run anything.
@@ -58,10 +70,18 @@ oversell:
 
 ## Quick start
 
-Requires **Node.js 24+**.
+**Windows x64 portable app:** download the desktop ZIP from
+[v0.1.0 Releases](https://github.com/jarviseven07-prog/jarvisync/releases/tag/v0.1.0),
+extract the entire archive, and open `JarviSync.exe` inside. Keep the extracted
+files together. No separate Node.js installation is needed for the bundled app.
+
+**From source:** requires **Git and Node.js 24+**. Run these commands in a terminal:
 
 ```bash
-npm install
+git clone https://github.com/jarviseven07-prog/jarvisync.git
+cd jarvisync
+git checkout v0.1.0
+npm ci
 npm run build
 ```
 
@@ -79,9 +99,11 @@ Then open <http://127.0.0.1:4317>.
 npm start
 ```
 
-The two modes keep separate data directories. `NODEBOARD_DATA_DIR` overrides the
-location. On first run you get a clearly-labelled sample project; new projects
-start empty.
+The two modes keep separate data directories. For the web server,
+`NODEBOARD_DATA_DIR` overrides the data directory. For the desktop app,
+`NODEBOARD_DESKTOP_DATA_DIR` overrides the app profile directory; board data is
+stored in its `data/` subdirectory. On first run you get a clearly-labelled
+sample project; new projects start empty.
 
 For development, run the server first, then in another terminal:
 
@@ -99,6 +121,13 @@ recording scope, then install. `integrations/` ships packages for:
 | Claude Code | plugin + MCP |
 | Codex | plugin + MCP |
 | Hermes | native plugin + separate MCP config |
+
+These are adapter packages, not a claim that every host and model has passed a
+real new-session workflow. Host trust, installation and a read/write check are
+required in your own environment; see the
+[verification scope](docs/agent-onboarding.md#验证范围). Generic stdio MCP supplies
+tools without native session hooks. An agent running on a remote machine cannot
+connect directly to your localhost server.
 
 Day to day, agents use the JarviSync MCP tools inside their host. There is also
 a CLI:

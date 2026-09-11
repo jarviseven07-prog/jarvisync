@@ -1,6 +1,6 @@
 # Agent 接入
 
-用户已于 2026-09-10 采纳新用户接入方案，并追加 Hermes 为首批宿主。JarviSync 提供本地共享上下文与工作记录，执行仍由用户自己的 Agent 完成。
+JarviSync 提供本地共享上下文与工作记录，执行仍由用户自己的 Agent 完成。当前提供 Codex、Claude Code、Hermes 适配包及通用 stdio MCP；本版验证平台为 Windows，界面为中文。
 
 ## 用户入口
 
@@ -63,6 +63,10 @@ Claude Code 可用 `/jarvisync:status` 查看本会话记录状态，`/jarvisync
 
 ## 验证范围
 
-实现与实际验收是两件事。本轮精确检查、浏览器截图、原生 CLI 安装证据、缺失的宿主信任或真实新会话证据统一记录在 [本轮交接](../work/agent-onboarding/handoff.md)。未经验证的项保持待验，不由自动测试替代。
+实现与实际验收是两件事。已有 Windows 隔离环境中的原生安装、Hook、stdio MCP 与读写协议检查；Hermes 曾完成一次真实新会话的发现、关联、开始、文件交付流程。这些检查不代表所有宿主、模型、子 Agent 或长任务都已稳定，也不能替代当前安装的真实会话验收。
 
-格式依据：[MCP stdio](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)、[Codex 插件](https://learn.chatgpt.com/docs/plugins)、[Codex Hooks](https://learn.chatgpt.com/docs/hooks)、[Claude Code 插件](https://code.claude.com/docs/en/plugins)、[Claude Code Hooks](https://code.claude.com/docs/en/hooks)。Hermes 对应本机源码的原生插件 API，源码定位与边界见 `work/agent-onboarding/hermes-findings.md`。
+每次安装后，按宿主提示完成信任并新开对话，先运行界面提供的独立读写验证，再用一项正常工作核对自动关联和交付。Codex 的 Hook 信任、Claude Code 的真实会话行为、Hermes 的不同模型与子 Agent 行为，都应以当前环境的实际结果为准。通用 MCP 没有原生会话入口，不等同完整自动关联。
+
+上下文接口返回当前节点与直接上游的相关内容；已完成且未归档的直接上游会带交付摘要和成果链接。链接原件由 Agent 按需读取，不自动加载全文。看板本身不调用模型，但宿主可能把读到的内容发送给模型服务商；请按自己的宿主和服务商设置判断数据流向。
+
+格式依据：[MCP stdio](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)、[Codex 插件](https://learn.chatgpt.com/docs/plugins)、[Codex Hooks](https://learn.chatgpt.com/docs/hooks)、[Claude Code 插件](https://code.claude.com/docs/en/plugins)、[Claude Code Hooks](https://code.claude.com/docs/en/hooks)。Hermes 原生插件的配置和生命周期约定见[随附说明](../integrations/hermes/plugin/README.md)。

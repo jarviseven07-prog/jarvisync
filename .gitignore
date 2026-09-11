@@ -5,3 +5,5 @@ artifacts/
 .env
 *.log
 desktop/JarviSync.exe
+__pycache__/
+*.py[cod]
