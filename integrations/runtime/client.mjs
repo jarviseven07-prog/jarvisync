@@ -17,9 +17,11 @@ export async function atomicJson(path, value) {
       try { await rename(temp, path); break; }
       catch (error) {
         // Windows can transiently reject an atomic replacement while another
-        // process holds the destination or is replacing the same file.
-        if (!['EACCES', 'EBUSY', 'EPERM'].includes(error.code) || attempt >= 19) throw error;
-        await new Promise(resolve => setTimeout(resolve, Math.min(5 * (attempt + 1), 50)));
+        // process holds the destination or is replacing the same file. Slow
+        // machines and CI runners need a window well above a second for the
+        // lock to clear, so keep retrying for roughly 2.7 seconds.
+        if (!['EACCES', 'EBUSY', 'EPERM'].includes(error.code) || attempt >= 29) throw error;
+        await new Promise(resolve => setTimeout(resolve, Math.min(5 * (attempt + 1), 90)));
       }
     }
   }

@@ -108,7 +108,12 @@ test('atomicJson 在 Windows 临时占用解除后完成原子替换并清理临
   assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), { state: 'before' });
   assert.equal((await readdir(directory)).some(name => name.startsWith('pending.json.') && name.endsWith('.tmp')), true);
   await release();
-  assert.equal(await write, undefined);
+  // Slow runners can take a moment to observe the unlock and finish the
+  // pending rename; poll instead of assuming the write resolves immediately.
+  for (let attempt = 0; attempt < 200 && outcome === 'pending'; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
+  assert.equal(outcome, 'fulfilled', writeError?.message);
   assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), { state: 'after' });
   assert.deepEqual((await readdir(directory)).filter(name => name.endsWith('.tmp')), []);
 });
