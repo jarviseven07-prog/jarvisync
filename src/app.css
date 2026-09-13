@@ -449,6 +449,10 @@ html[data-theme='dark'] .project-overview-trigger:hover {
 .node-canvas .react-flow__controls { overflow: hidden; background: #fffdfa; border: 1px solid #cec1b0; border-radius: 3px; box-shadow: 0 5px 16px rgba(70,53,34,.08); }
 .node-canvas .react-flow__controls-button { color: #514d47; background: #fffdfa; border-color: #e1d8cb; }
 .node-canvas .react-flow__controls-button:hover { background: #f2ece3; }
+.node-canvas .snap-guides { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 1001; }
+.node-canvas .snap-guide { position: absolute; background: rgba(97, 143, 132, .65); }
+.node-canvas .snap-guide-x { width: 1px; }
+.node-canvas .snap-guide-y { height: 1px; }
 .node-canvas .canvas-relations {
   display: flex;
   align-items: center;

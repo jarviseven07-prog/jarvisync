@@ -96,18 +96,10 @@ export function ProgressEdge({
       />
 
       {progress === 'active' && (
-        <path
-          aria-hidden="true"
-          className="progress-edge__packet"
-          d="M -4 0 H 4"
-        >
-          <animateMotion
-            dur="1.65s"
-            path={edgePath}
-            repeatCount="indefinite"
-            rotate="auto"
-          />
-        </path>
+        <>
+          <path aria-hidden="true" className="progress-edge__pulse-glow" d={edgePath} pathLength={100} fill="none" />
+          <path aria-hidden="true" className="progress-edge__pulse-core" d={edgePath} pathLength={100} fill="none" />
+        </>
       )}
     </g>
   );

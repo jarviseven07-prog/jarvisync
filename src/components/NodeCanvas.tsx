@@ -6,6 +6,7 @@ import {
   Position,
   ReactFlow,
   applyNodeChanges,
+  useStore,
   type Node,
   type NodeChange,
   type NodeProps,
@@ -18,6 +19,7 @@ import { getEdgeProgress } from '../edge-progress';
 import { transitiveEdgeIds } from '../edge-visibility';
 import { ProgressEdge, type ProgressFlowEdge } from './ProgressEdge';
 import { NodeNumber } from './NodeNumber';
+import { collectAlignment } from '../snap-alignment';
 
 type Relation = 'selected' | 'input' | 'output' | 'other' | 'none';
 type CanvasNodeData = { workNode: WorkNode; relation: Relation; phaseLabel: string; phaseKind: string } & Record<string, unknown>;
@@ -62,6 +64,21 @@ interface NodeCanvasProps {
   onSelectEdge: (id: string | null) => void;
 }
 
+type Guide = { x?: number; y?: number };
+
+// ReactFlow 子组件：在 Provider 上下文内读取视口，把吸附参考线画到画布坐标系
+function SnapGuides({ guides }: { guides: Guide[] }) {
+  const transform = useStore((state) => state.transform);
+  if (guides.length === 0) return null;
+  return (
+    <div className="snap-guides" aria-hidden="true">
+      {guides.map((guide, index) => guide.x !== undefined
+        ? <span key={`x${index}`} className="snap-guide snap-guide-x" style={{ left: guide.x * transform[2] + transform[0], height: '100%' }} />
+        : <span key={`y${index}`} className="snap-guide snap-guide-y" style={{ top: (guide.y ?? 0) * transform[2] + transform[1], width: '100%' }} />)}
+    </div>
+  );
+}
+
 const nodeTypes = { work: WorkNodeCard };
 const edgeTypes = { progress: ProgressEdge };
 
@@ -78,8 +95,23 @@ export function NodeCanvas({
 }: NodeCanvasProps) {
   const flow = useRef<ReactFlowInstance<CanvasNode, ProgressFlowEdge> | null>(null);
   const localPositions = useRef(new Map<string, { x: number; y: number }>());
+  const dragOffsets = useRef({ dx: 0, dy: 0 });
   const savedNodes = useRef(nodes);
   const [showAllEdges, setShowAllEdges] = useState(false);
+  const [guides, setGuides] = useState<Guide[]>([]);
+  const snappingDisabled = useRef(false);
+  const altRef = snappingDisabled;
+  useEffect(() => {
+    const readAlt = (event: Event) => { altRef.current = (event as KeyboardEvent).altKey; };
+    window.addEventListener('keydown', readAlt);
+    window.addEventListener('keyup', readAlt);
+    window.addEventListener('blur', readAlt);
+    return () => {
+      window.removeEventListener('keydown', readAlt);
+      window.removeEventListener('keyup', readAlt);
+      window.removeEventListener('blur', readAlt);
+    };
+  }, [altRef]);
   savedNodes.current = nodes;
   const layoutSignature = nodes.map(node => node.id).sort().join('|');
   const relations = useMemo(() => {
@@ -148,6 +180,38 @@ export function NodeCanvas({
 
   function changeNodes(changes: NodeChange<CanvasNode>[]) {
     const canvasChanges = changes.filter((change) => change.type === 'dimensions' || change.type === 'position');
+    let guides: Guide[] = [];
+    const dragChange = canvasChanges.find((change) => change.type === 'position' && change.dragging === true);
+    const endChange = canvasChanges.find((change) => change.type === 'position' && change.dragging === false);
+    if (dragChange?.type === 'position' && dragChange.position && !snappingDisabled.current) {
+      const moving = flowNodes.find((node) => node.id === dragChange.id);
+      if (moving) {
+        const others = flowNodes.filter((node) => node.id !== dragChange.id && !node.dragging);
+        const alignment = collectAlignment({ ...moving, position: dragChange.position }, others);
+        if (alignment.dx !== 0 || alignment.dy !== 0) {
+          for (const change of canvasChanges) {
+            if (change.type === 'position' && change.position) {
+              change.position = { x: change.position.x + alignment.dx, y: change.position.y + alignment.dy };
+            }
+          }
+        }
+        dragOffsets.current = { dx: alignment.dx, dy: alignment.dy };
+        guides = alignment.guides;
+      }
+    } else if (endChange?.type === 'position' && endChange.position) {
+      // 松手事件带的还是内部 dragItems 的原始位置：补上吸附偏移，避免覆盖吸附结果
+      const { dx, dy } = dragOffsets.current;
+      dragOffsets.current = { dx: 0, dy: 0 };
+      if (dx !== 0 || dy !== 0) {
+        for (const change of canvasChanges) {
+          if (change.type === 'position' && change.position) {
+            change.position = { x: change.position.x + dx, y: change.position.y + dy };
+          }
+        }
+      }
+    }
+    if (endChange) setGuides([]);
+    else setGuides(guides);
     for (const change of canvasChanges) {
       if (change.type === 'position' && change.position) localPositions.current.set(change.id, change.position);
     }
@@ -158,14 +222,16 @@ export function NodeCanvas({
   }
 
   async function finishMove(node: CanvasNode) {
-    localPositions.current.set(node.id, node.position);
+    setGuides([]);
+    // 松手事件已把吸附后的位置写入 localPositions，以它为准（回调参数是未吸附的原始位置）
+    const position = localPositions.current.get(node.id) ?? node.position;
     const original = savedNodes.current.find(item => item.id === node.id);
-    const unchanged = original?.position.x === node.position.x && original?.position.y === node.position.y;
-    const saved = unchanged || await onMoveNode(node.id, node.position);
+    const unchanged = original?.position.x === position.x && original?.position.y === position.y;
+    const saved = unchanged || await onMoveNode(node.id, position);
     localPositions.current.delete(node.id);
     if (!saved) {
-      const position = savedNodes.current.find(item => item.id === node.id)?.position;
-      if (position) setFlowNodes(current => current.map(item => item.id === node.id ? { ...item, position } : item));
+      const restore = savedNodes.current.find(item => item.id === node.id)?.position;
+      if (restore) setFlowNodes(current => current.map(item => item.id === node.id ? { ...item, position: restore } : item));
     }
   }
 
@@ -195,6 +261,7 @@ export function NodeCanvas({
         onNodeClick={(_, node) => onSelectNode(node.id)}
         onEdgeClick={(_, edge) => onSelectEdge(edge.id)}
         onPaneClick={() => onSelectEdge(null)}
+        onMove={() => setGuides(current => current.length ? [] : current)}
         nodesDraggable={!moveDisabled}
         nodesFocusable
         selectionKeyCode={null}
@@ -209,6 +276,7 @@ export function NodeCanvas({
         fitViewOptions={{ padding: 0.22, maxZoom: 1 }}
         proOptions={{ hideAttribution: true }}
       >
+        {guides.length > 0 && <SnapGuides guides={guides} />}
         {transitiveIds.size > 0 && <Panel position="top-right" className="canvas-relations" aria-label="连线显示">
           <span className="canvas-relations__hint" aria-live="polite">
             {showAllEdges ? '跨级连线以虚线显示' : hiddenEdgeCount > 0 ? `已收起 ${hiddenEdgeCount} 条跨级连线` : '当前关联连线已展开'}

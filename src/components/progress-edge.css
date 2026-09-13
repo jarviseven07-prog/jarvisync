@@ -41,13 +41,31 @@
   opacity: .27;
 }
 
-.progress-edge__packet {
+/* 电流效果：亮白光段沿连线循环流动，外层柔光晕 + 内层亮芯 */
+.progress-edge__pulse-glow,
+.progress-edge__pulse-core {
   pointer-events: none;
   fill: none;
-  stroke: #7fb8a9;
   stroke-linecap: round;
-  stroke-width: 3;
-  filter: drop-shadow(0 0 1.5px rgba(40, 126, 109, .42));
+  stroke-dasharray: 14 86;
+}
+
+.progress-edge__pulse-glow {
+  stroke: rgba(255, 255, 255, .38);
+  stroke-width: 7;
+  filter: blur(1.5px);
+  animation: progress-edge-flow 1.9s linear infinite;
+}
+
+.progress-edge__pulse-core {
+  stroke: #f0ebdc;
+  stroke-width: 2.6;
+  animation: progress-edge-flow 1.9s linear infinite;
+}
+
+@keyframes progress-edge-flow {
+  from { stroke-dashoffset: 100; }
+  to { stroke-dashoffset: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -55,7 +73,8 @@
     transition: none;
   }
 
-  .progress-edge__packet {
+  .progress-edge__pulse-glow,
+  .progress-edge__pulse-core {
     display: none;
   }
 }
@@ -64,6 +83,10 @@ html[data-theme='dark'] .progress-edge--idle {
   --progress-edge-color: #817668;
 }
 
-html[data-theme='dark'] .progress-edge__packet {
-  stroke: #b1dbcc;
+html[data-theme='dark'] .progress-edge__pulse-glow {
+  stroke: rgba(177, 219, 204, .3);
+}
+
+html[data-theme='dark'] .progress-edge__pulse-core {
+  stroke: #d8f3e7;
 }
