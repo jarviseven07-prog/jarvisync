@@ -1,12 +1,12 @@
 # Agent 接入
 
-JarviSync 提供本地共享上下文与工作记录，执行仍由用户自己的 Agent 完成。当前提供 Codex、Claude Code、Hermes 适配包及通用 stdio MCP；本版验证平台为 Windows，界面为中文。
+JarviSync 提供本地共享上下文与工作记录，执行仍由用户自己的 Agent 完成。当前提供 Codex、Claude Code 适配包及通用 stdio MCP；其它支持 MCP 的宿主走「其他 Agent」入口。本版验证平台为 Windows 和 macOS，界面为中文。
 
 ## 用户入口
 
-打开看板右上角「接入我的 Agent」，选择 Codex、Claude Code 或 Hermes，再选择记录明确交办的工作，或限定到一个已有项目。点击准备接入后再安装到宿主。安装操作仅在用户点击时执行，不改动账号和其它工具设置。
+打开看板右上角「接入我的 Agent」，选择 Codex、Claude Code 或「其他 Agent」，再选择记录明确交办的工作，或限定到一个已有项目。点击准备接入后再安装到宿主。安装操作仅在用户点击时执行，不改动账号和其它工具设置。
 
-Codex 安装后仍需在 `/hooks` 中查看并信任当前 JarviSync Hook 定义，再新开对话。Claude Code 和 Hermes 也需要新开对话让插件与工具生效。按宿主提示完成原生确认。宿主命令行不在本机时，界面保留待安装状态。
+Codex 安装后仍需在 `/hooks` 中查看并信任当前 JarviSync Hook 定义，再新开对话。Claude Code 也需要新开对话让插件与工具生效。按宿主提示完成原生确认。宿主命令行不在本机时，界面保留待安装状态。
 
 Claude Code 2.1.260 的原生校验不支持 `Interrupt` Hook，且用户中断不会触发 `Stop`。因此此适配器尚不能自动观察所有用户中断；需要立即阻止该接入继续写回时，在看板中停用它。跨会话接管须由用户确认原执行已停止，不能声称已从 Claude 宿主观察到中断。见 [Claude Code 官方 Hook 说明](https://code.claude.com/docs/en/hooks#stop)。
 
@@ -56,17 +56,16 @@ Claude Code 可用 `/jarvisync:status` 查看本会话记录状态，`/jarvisync
 - 接入记录、验证区与安装源：当前数据目录 `agent-integrations/`，独立于业务项目。
 - 稳定身份与动态端口：`instance.json`、`agent-endpoint.json`。
 - Codex / Claude Code：生成本地来源并通过宿主官方插件命令安装。权限与 Hook 信任仍由宿主负责。
-- Hermes：原生插件复制到所选 Hermes home 的 `plugins/jarvisync-hermes`，通过宿主命令启用并合并 `mcp_servers.jarvisync`。同名非本接入的配置拒绝覆盖。
 - 接入配置包含本地连接凭据；不要随研究证据或公开源码上传。完整迁移备份应保留同一数据目录及附件，也应保留实例身份和接入目录。仅导出 board 不是完整迁移。
 
 新接入协议使用本地 stdio MCP；工具进程与 Hook 使用安装器写入的绝对运行时，不要求新用户编辑 JSON 或拼接开发仓库路径。各宿主模板与运行时位于 `integrations/`，没有增加模型 API Key 或模型路由。
 
 ## 验证范围
 
-实现与实际验收是两件事。已有 Windows 隔离环境中的原生安装、Hook、stdio MCP 与读写协议检查；Hermes 曾完成一次真实新会话的发现、关联、开始、文件交付流程。这些检查不代表所有宿主、模型、子 Agent 或长任务都已稳定，也不能替代当前安装的真实会话验收。
+实现与实际验收是两件事。已有 Windows 隔离环境中的原生安装、Hook、stdio MCP 与读写协议检查。这些检查不代表所有宿主、模型、子 Agent 或长任务都已稳定，也不能替代当前安装的真实会话验收。
 
-每次安装后，按宿主提示完成信任并新开对话，先运行界面提供的独立读写验证，再用一项正常工作核对自动关联和交付。Codex 的 Hook 信任、Claude Code 的真实会话行为、Hermes 的不同模型与子 Agent 行为，都应以当前环境的实际结果为准。通用 MCP 没有原生会话入口，不等同完整自动关联。
+每次安装后，按宿主提示完成信任并新开对话，先运行界面提供的独立读写验证，再用一项正常工作核对自动关联和交付。Codex 的 Hook 信任、Claude Code 的真实会话行为与子 Agent 行为，都应以当前环境的实际结果为准。通用 MCP 没有原生会话入口，不等同完整自动关联。
 
 上下文接口返回当前节点与直接上游的相关内容；已完成且未归档的直接上游会带交付摘要和成果链接。链接原件由 Agent 按需读取，不自动加载全文。看板本身不调用模型，但宿主可能把读到的内容发送给模型服务商；请按自己的宿主和服务商设置判断数据流向。
 
-格式依据：[MCP stdio](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)、[Codex 插件](https://learn.chatgpt.com/docs/plugins)、[Codex Hooks](https://learn.chatgpt.com/docs/hooks)、[Claude Code 插件](https://code.claude.com/docs/en/plugins)、[Claude Code Hooks](https://code.claude.com/docs/en/hooks)。Hermes 原生插件的配置和生命周期约定见[随附说明](../integrations/hermes/plugin/README.md)。
+格式依据：[MCP stdio](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)、[Codex 插件](https://learn.chatgpt.com/docs/plugins)、[Codex Hooks](https://learn.chatgpt.com/docs/hooks)、[Claude Code 插件](https://code.claude.com/docs/en/plugins)、[Claude Code Hooks](https://code.claude.com/docs/en/hooks)。

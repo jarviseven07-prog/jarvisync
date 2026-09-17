@@ -23,48 +23,10 @@ test('shared collaboration guidance keeps node, dispatch, recovery, and stop bou
   ]) assert.match(skill, new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 });
 
-test('Hermes prompt preserves the same collaboration boundaries and resolved recovery contract', async () => {
-  const plugin = await read('../integrations/hermes/plugin/__init__.py');
-  const compact = plugin.replace(/\s+/g, ' ');
-  for (const phrase of [
-    'independent deliverables',
-    'deliverable gets its own node',
-    'child-agent capability',
-    'Planning a Codex node is not launching',
-    'host successfully dispatches work',
-    'milestones, blockers, and next steps',
-    'original failed request ID',
-    'discard without stopping work',
-    'Respect a user redirect or stop immediately',
-    'A previous binding does not make a new',
-    'deliverable part of its old node',
-    'Node ownership or a planned model is not evidence',
-  ]) assert.match(compact, new RegExp(phrase));
-  assert.match(compact, /jarvisync_resolve with that failed request's/);
-  assert.match(compact, /clientOperationId, resolution retry or discard, and the current expectedRevision/);
-  assert.doesNotMatch(plugin, /jarvisync_restore|jarvisync_resume/);
-});
-
-test('shared and Hermes guidance preserve readable multi-item records within the Hermes prompt limit', async () => {
-  const [skill, plugin] = await Promise.all([
-    read('../integrations/shared/skill/SKILL.md'),
-    read('../integrations/hermes/plugin/__init__.py'),
-  ]);
+test('shared guidance preserves readable multi-item records', async () => {
+  const skill = await read('../integrations/shared/skill/SKILL.md');
   assert.match(skill, /多个事项必须各占一行/);
   assert.match(skill, /真实换行的 `- ` 或 `1. `/);
   assert.match(skill, /绝不把 `\\n` 写成文字/);
   assert.match(skill, /已完成和待办分段；决定单列/);
-  const normalizedPlugin = plugin.replace(/\r\n/g, '\n');
-  const marker = '_SYSTEM_PROMPT = """\\\n';
-  const start = normalizedPlugin.indexOf(marker);
-  assert.notEqual(start, -1, 'Hermes system prompt should remain a static prompt section');
-  const contentStart = start + marker.length;
-  const contentEnd = normalizedPlugin.indexOf('"""', contentStart);
-  assert.notEqual(contentEnd, -1, 'Hermes system prompt should close');
-  const section = normalizedPlugin.slice(contentStart, contentEnd);
-  assert.ok(section.length <= 1600, `Hermes system prompt exceeds 1600 chars: ${section.length}`);
-  assert.match(section, /real new line/);
-  assert.ok(section.includes('never a literal "\\\\n"'), 'Hermes source must escape the literal backslash-n twice');
-  assert.match(section, /completed and pending work\s+in separate paragraphs; state decisions separately/);
 });
-

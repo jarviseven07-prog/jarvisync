@@ -6,7 +6,7 @@ import { atomicJson, digest } from '../integrations/runtime/client.mjs';
 import { prepareIntegration, installIntegration, detectHosts } from '../integrations/installer.mjs';
 import { getProgressCheckpoint } from './progress-checkpoint.mjs';
 
-const hosts = ['codex', 'claude-code', 'hermes', 'mcp'];
+const hosts = ['codex', 'claude-code', 'mcp'];
 export function openOnboarding({ dataDir, root, store, getUrl, servicePort = 0, installerOptions = {} }) {
   const path = join(dataDir, 'agent-integrations', 'state.json');
   let queue = Promise.resolve();
