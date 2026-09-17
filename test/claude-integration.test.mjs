@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { hookExecCommand, prepareIntegration } from '../integrations/installer.mjs';
+import { hookCommand, hookExecCommand, prepareIntegration } from '../integrations/installer.mjs';
 import { createClient } from '../integrations/runtime/client.mjs';
 import { readSessionState, updateSessionState, writeSessionState } from '../integrations/runtime/hook.mjs';
 import { recordingCommand } from '../integrations/runtime/recording-command.mjs';
@@ -24,7 +24,7 @@ function run(command, args) {
   });
 }
 
-test('Claude Windows Hook exec form directly starts Node with Chinese and space paths', async () => {
+test('Claude Windows Hook exec form directly starts Node with Chinese and space paths', { skip: process.platform !== 'win32' }, async () => {
   const directory = await mkdtemp(join(tmpdir(), 'JarviSync 中文 路径 '));
   const hook = join(directory, '钩子 文件.mjs');
   const connection = join(directory, '连接 文件.json');
@@ -41,7 +41,9 @@ test('Claude Windows Hook exec form directly starts Node with Chinese and space 
   }
 });
 
-test('Claude preparation uses a confirmed external Node for all generated hook commands', async () => {
+// Windows only: the exec form cannot carry ELECTRON_RUN_AS_NODE, so preparation swaps in an
+// installed Node. POSIX hosts keep the shell form, which carries the variable itself.
+test('Claude preparation uses a confirmed external Node for all generated hook commands', { skip: process.platform !== 'win32' }, async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'jarvisync-claude-prepare-'));
   try {
     const profile = { id: 'claude-profile', host: 'claude-code', scope: 'work', projectId: null, connectionToken: 'token' };
@@ -61,6 +63,53 @@ test('Claude preparation uses a confirmed external Node for all generated hook c
     }
   } finally {
     await rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test('Claude preparation keeps the Electron runtime and carries its environment on POSIX hosts', { skip: process.platform === 'win32' }, async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'jarvisync-claude-posix-'));
+  const electron = join(dataDir, 'JarviSync.app', 'Contents', 'MacOS', 'JarviSync');
+  try {
+    const profile = { id: 'claude-profile', host: 'claude-code', scope: 'work', projectId: null, connectionToken: 'token' };
+    const prepared = await prepareIntegration({
+      root: process.cwd(), dataDir, url: 'http://127.0.0.1:4317', boardInstanceId: 'board', profile,
+      nodeExecutable: electron, runtimeEnv: { ELECTRON_RUN_AS_NODE: '1' },
+    });
+    const connection = JSON.parse(await readFile(prepared.configPath, 'utf8'));
+    assert.equal(connection.nodeExecutable, electron);
+    assert.deepEqual(connection.runtimeEnv, { ELECTRON_RUN_AS_NODE: '1' });
+
+    // The MCP client applies `env` itself, so the wrapper stays an ordinary command + args pair.
+    const mcp = JSON.parse(await readFile(join(prepared.pluginRoot, '.mcp.json'), 'utf8'));
+    assert.equal(mcp.mcpServers.jarvisync.command, electron);
+    assert.equal(mcp.mcpServers.jarvisync.env.ELECTRON_RUN_AS_NODE, '1');
+
+    // Hooks are a single shell string, so the variable rides in front of the executable.
+    const hooks = JSON.parse(await readFile(join(prepared.pluginRoot, 'hooks', 'hooks.json'), 'utf8'));
+    const handlers = Object.values(hooks.hooks).flatMap(groups => groups.flatMap(group => group.hooks));
+    assert.ok(handlers.length > 0);
+    for (const handler of handlers) {
+      assert.equal(handler.args, undefined);
+      assert.doesNotMatch(handler.command, /powershell/i);
+      assert.ok(handler.command.startsWith(`ELECTRON_RUN_AS_NODE='1' '${electron}' `), handler.command);
+    }
+  } finally {
+    await rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test('POSIX hook commands survive a shell round trip through Chinese and space paths', { skip: process.platform === 'win32' }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'JarviSync 中文 路径 '));
+  const hook = join(directory, '钩子 文件.mjs');
+  const connection = join(directory, '连接 文件.json');
+  try {
+    await writeFile(hook, 'process.stdout.write(JSON.stringify([process.env.HOOK_PROBE, ...process.argv.slice(2)]));\n', 'utf8');
+    const command = hookCommand({ nodeExecutable: process.execPath, hookScript: hook, configPath: connection, host: 'claude-code', runtimeEnv: { HOOK_PROBE: "it's quoted" }, windows: false });
+    const result = await run('/bin/sh', ['-c', command]);
+    assert.equal(result.code, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), ["it's quoted", '--connection', connection, '--host', 'claude-code']);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
   }
 });
 
