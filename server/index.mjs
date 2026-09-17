@@ -7,7 +7,7 @@ import { openStore } from './store.mjs';
 import { openAgentService } from './agent-service.mjs';
 import { openOnboarding } from './onboarding.mjs';
 import { computeBuildId } from './build-identity.mjs';
-import { atomicJson, digest } from '../integrations/runtime/client.mjs';
+import { atomicJson, digest, isMainModule } from '../integrations/runtime/client.mjs';
 import { BoardError, buildContext, normalizeAttachmentMimeType, normalizeAttachmentName, prepareHumanChange, prepareHumanInputChange } from './model.mjs';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -245,7 +245,7 @@ export async function startServer({ port = Number(process.env.PORT || 4317), dat
     if (endpoint?.url === actualUrl && endpoint?.pid === process.pid) await unlink(endpointPath).catch(() => {});
   } };
 }
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isMainModule(import.meta.url)) {
   try {
     const app = await startServer();
     console.log(`JarviSync 已启动：${app.url}`);

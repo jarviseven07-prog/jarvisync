@@ -1,4 +1,5 @@
 import { readFile, open, mkdir, rename, readdir, unlink, link } from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
@@ -6,6 +7,13 @@ import { spawn } from 'node:child_process';
 import { computeBuildIdentity } from './build-identity.mjs';
 
 export const digest = value => createHash('sha256').update(value).digest('hex');
+// macOS resolves module URLs through symlinks (/var -> /private/var) while argv[1] keeps the
+// spelling the caller passed, so an entry-point check has to compare real paths.
+export function isMainModule(metaUrl) {
+  const real = path => { try { return realpathSync(path); } catch { return null; } };
+  const entry = process.argv[1] ? real(resolve(process.argv[1])) : null;
+  return entry !== null && entry === real(fileURLToPath(metaUrl));
+}
 export async function atomicJson(path, value) {
   await mkdir(dirname(path), { recursive: true });
   const temp = `${path}.${randomUUID()}.tmp`;
