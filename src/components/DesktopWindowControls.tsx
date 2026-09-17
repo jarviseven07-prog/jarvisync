@@ -8,6 +8,7 @@ type DesktopWindowState = {
 };
 
 type DesktopWindowApi = {
+  platform?: string;
   getState: () => Promise<DesktopWindowState>;
   minimize: () => Promise<void>;
   toggleMaximize: () => Promise<void>;
@@ -42,13 +43,16 @@ export function DesktopWindowControls() {
 
   if (!desktopWindow) return null;
 
+  // On macOS the traffic lights sit in this strip already, so the strip only reserves room for them.
+  const nativeButtons = desktopWindow.platform === 'darwin';
+
   return (
-    <header className={`desktop-window-controls${state.isFullScreen ? ' is-full-screen' : ''}`} aria-label="桌面窗口控制栏">
+    <header className={`desktop-window-controls${state.isFullScreen ? ' is-full-screen' : ''}${nativeButtons ? ' has-native-buttons' : ''}`} aria-label="桌面窗口控制栏">
       <div className="desktop-window-title" aria-label="拖动窗口">
         <span>JarviSync · 项目画布</span>
         {state.isFullScreen && <small>全屏</small>}
       </div>
-      <div className="desktop-window-actions" aria-label="窗口操作">
+      {!nativeButtons && <div className="desktop-window-actions" aria-label="窗口操作">
         <button type="button" onClick={() => void desktopWindow.minimize()} aria-label="最小化窗口" title="最小化">
           <Minimize size={15} strokeWidth={1.8} />
         </button>
@@ -61,7 +65,7 @@ export function DesktopWindowControls() {
         <button className="desktop-window-close" type="button" onClick={() => void desktopWindow.close()} aria-label="关闭窗口" title="关闭">
           <X size={17} strokeWidth={1.8} />
         </button>
-      </div>
+      </div>}
     </header>
   );
 }
