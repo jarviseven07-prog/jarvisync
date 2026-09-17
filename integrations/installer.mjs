@@ -63,15 +63,20 @@ export async function findHost(host, { homeDir = homedir(), hostExecutables = {}
   const environment = { ...process.env, ...hostEnv };
   const candidates = [];
   if (host === 'hermes') candidates.push(join(environment.HERMES_HOME || join(homeDir, '.hermes'), 'bin', process.platform === 'win32' ? 'hermes.exe' : 'hermes'));
-  if (host === 'claude-code' && process.platform === 'win32') {
-    const base = join(environment.APPDATA || join(homeDir, 'AppData', 'Roaming'), 'Claude', 'claude-code');
+  // Claude Desktop keeps its bundled Code beside itself, versioned, and never on PATH. The macOS
+  // build wraps the same executable in an .app bundle.
+  if (host === 'claude-code' && (process.platform === 'win32' || process.platform === 'darwin')) {
+    const base = process.platform === 'win32'
+      ? join(environment.APPDATA || join(homeDir, 'AppData', 'Roaming'), 'Claude', 'claude-code')
+      : join(homeDir, 'Library', 'Application Support', 'Claude', 'claude-code');
+    const executable = process.platform === 'win32' ? ['claude.exe'] : ['claude.app', 'Contents', 'MacOS', 'claude'];
     const entries = await readdir(base).catch(() => []);
     const versions = entries.filter(entry => /^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/.test(entry));
     versions.sort((a, b) => {
       const left = a.split(/[.+-]/).slice(0, 3).map(Number), right = b.split(/[.+-]/).slice(0, 3).map(Number);
       return right[0] - left[0] || right[1] - left[1] || right[2] - left[2];
     });
-    candidates.push(...versions.map(version => join(base, version, 'claude.exe')));
+    candidates.push(...versions.map(version => join(base, version, ...executable)));
   }
   if (host === 'codex' && process.platform === 'win32') {
     const base = join(environment.LOCALAPPDATA || join(homeDir, 'AppData', 'Local'), 'OpenAI', 'Codex', 'bin');
@@ -80,8 +85,12 @@ export async function findHost(host, { homeDir = homedir(), hostExecutables = {}
     candidates.push(...present.sort((a,b) => b.modified-a.modified).map(item => item.path));
   }
   const command = host === 'claude-code' ? 'claude' : host;
-  candidates.push(join(homeDir, '.local', 'bin', `${command}${process.platform === 'win32' ? '.exe' : ''}`));
-  for (const dir of (environment.PATH || '').split(delimiter).filter(Boolean)) candidates.push(join(dir, `${command}${process.platform === 'win32' ? '.exe' : ''}`));
+  const executable = `${command}${process.platform === 'win32' ? '.exe' : ''}`;
+  candidates.push(join(homeDir, '.local', 'bin', executable));
+  // A macOS app opened from Finder inherits only the system PATH, so check where CLI installers
+  // place their binaries before falling back to whatever PATH this process happens to carry.
+  if (process.platform === 'darwin') candidates.push(join('/opt/homebrew/bin', executable), join('/usr/local/bin', executable));
+  for (const dir of (environment.PATH || '').split(delimiter).filter(Boolean)) candidates.push(join(dir, executable));
   for (const candidate of candidates) if (await exists(candidate)) return candidate;
   return null;
 }
