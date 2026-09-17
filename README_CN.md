@@ -8,9 +8,9 @@
 
 [English](README.md) | [中文](README_CN.md)
 
-> 当前为早期版本，界面为中文；已验证的运行平台是 Windows，macOS 和 Linux 尚未验证。
+> 当前为早期版本，界面为中文；已验证的运行平台是 Windows 和 macOS，Linux 尚未验证。
 
-[下载 v0.1.2](https://github.com/jarviseven07-prog/jarvisync/releases/tag/v0.1.2) ·
+[下载](https://github.com/jarviseven07-prog/jarvisync/releases) ·
 [观看 30 秒工作流演示](https://github.com/jarviseven07-prog/jarvisync/releases/download/v0.1.0/JarviSync-Workflow-30s.mp4)
 
 视频使用重构的 UI 与虚构案例说明工作流，不是真实 Agent 执行过程的录屏。
@@ -56,8 +56,23 @@
 
 ## 快速开始
 
-v0.1.2 包含阶段提醒、建点时同时保存依赖连线，以及已有 Hermes 插件的升级修复。
-Agent 新建节点须明确上游；
+v0.1.3 把界面换成电子墨水屏风格的单色配色，并首次在 macOS 上验证运行。
+
+**单色界面，长时间看不累。** 浅色是暖纸底，深色是反色墨水屏，两套共用同一条灰阶，
+整个界面不含彩色。状态不再靠颜色区分，改用明暗：进行中最深、已完成最淡，
+而「进行中 / 受阻 / 已完成」本来就以文字写在节点上，信息没有减少。
+
+**macOS 支持。** 桌面壳、看板服务与 Agent 接入都已在 macOS 上跑通，
+`npm run package:desktop` 会按当前系统打包，在 macOS 上产出带正确名称和图标的 `JarviSync.app`。
+窗口使用 macOS 原生的红黄绿按钮；Claude Code 与 Codex 的可执行文件会在 macOS 的安装位置被找到。
+
+**一处静默失效的修复。** 判断「本文件是否为入口」时没有解析符号链接，
+而 macOS 的 `/var` 指向 `/private/var`。受影响的是 MCP 服务、Hook 和看板服务：
+进程能起来，但主函数不执行，也不报任何错。Windows 上不会触发。
+
+v0.1.3 的桌面包尚未发布，需要自行从源码构建。
+
+以下行为自 v0.1.2 起未变：Agent 新建节点须明确上游；
 确实独立时说明原因。现有节点和连线不会被自动重排或补造关系。
 活动执行约十分钟没有新进展写回时，宿主会在支持的事件中限频提醒核对阶段成果，
 仍由 Agent 判断是否已有事实可写；系统不会代写进展或判定完成。
@@ -66,17 +81,19 @@ Agent 新建节点须明确上游；
 在“接入我的 Agent”中更新接入，并在宿主中重新加载插件，才能载入新版工具和 Hook。
 需要回退旧版时保留并使用升级前备份。
 
-**Windows x64 便携版：**从
-[v0.1.2 发布页](https://github.com/jarviseven07-prog/jarvisync/releases/tag/v0.1.2)
+**Windows x64 便携版：**从[发布页](https://github.com/jarviseven07-prog/jarvisync/releases)
 下载桌面 ZIP，完整解压后打开其中的 `JarviSync.exe`，保留同目录的其它文件。
 便携版自带运行时，无需另装 Node.js。
+
+**macOS：**尚无预编译包。按下面的步骤从源码构建后运行 `npm run package:desktop`，
+产物是 `artifacts/desktop/JarviSync-darwin-<架构>/JarviSync.app`，拖进「应用程序」即可。
 
 **从源码运行：**需要 **Git 和 Node.js 24 或更新版本**，在终端运行：
 
 ```bash
 git clone https://github.com/jarviseven07-prog/jarvisync.git
 cd jarvisync
-git checkout v0.1.2
+git checkout main
 npm ci
 npm run build
 ```
