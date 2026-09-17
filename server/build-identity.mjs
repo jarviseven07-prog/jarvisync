@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import { resolve, relative, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { isMainModule } from '../integrations/runtime/client.mjs';
 
 export const BUILD_ID_VERSION = 'jarvisync-build-v1';
 const BACKEND_ROOTS = ['server', 'shared', 'integrations'];
@@ -65,7 +65,7 @@ export async function computeBuildIdentity({ root, distDir }) {
   return { version: BUILD_ID_VERSION, buildId: hash.digest('hex'), inputs };
 }
 
-const invoked = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+const invoked = isMainModule(import.meta.url);
 if (invoked) {
   const [root, distDir] = process.argv.slice(2);
   if (!root || !distDir) throw new Error('用法：node server/build-identity.mjs <root> <distDir>');

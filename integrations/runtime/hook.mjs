@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, readdir, rename, stat, unlink } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { isMainModule } from './client.mjs';
 
 const CONTEXT_EVENTS = new Set(['SessionStart', 'UserPromptSubmit', 'SubagentStart']);
 const HOOK_NETWORK_BUDGET_MS = 2000;
@@ -483,8 +483,7 @@ export function connectionOption(args = process.argv) {
   return option('--connection', args) || option('--config', args);
 }
 
-const invokedPath = process.argv[1] && resolve(process.argv[1]);
-if (invokedPath && invokedPath === fileURLToPath(import.meta.url)) {
+if (isMainModule(import.meta.url)) {
   try {
     const result = await runHook({
       rawInput: await readStdin(),

@@ -1,7 +1,5 @@
 import { createInterface } from 'node:readline';
-import { fileURLToPath } from 'node:url';
-import { resolve } from 'node:path';
-import { createClient, loadConnection } from './client.mjs';
+import { createClient, isMainModule, loadConnection } from './client.mjs';
 
 const string = description => ({ type: 'string', description });
 const session = { sessionId: string('本次宿主真实会话 ID，来自 JarviSync 会话入口；不得猜测或沿用其他会话。') };
@@ -142,4 +140,4 @@ export async function runMcp(config, { input = process.stdin, output = process.s
     } else send({ jsonrpc: '2.0', id: request.id, error: { code: -32601, message: '不支持的方法。' } });
   }
 }
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) runMcp().catch(error => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });
+if (isMainModule(import.meta.url)) runMcp().catch(error => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });

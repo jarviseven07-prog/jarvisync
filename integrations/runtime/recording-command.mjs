@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { pathToFileURL } from 'node:url';
-import { loadConnection, createClient } from './client.mjs';
+import { loadConnection, createClient, isMainModule } from './client.mjs';
 import { readSessionState, updateSessionState } from './hook.mjs';
 
 const actions = new Set(['status', 'on', 'off']);
@@ -84,6 +83,6 @@ async function main() {
   process.stdout.write(`${JSON.stringify(await recordingCommand({ action, config, sessionId }))}\n`);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url)) {
   main().catch(error => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });
 }
