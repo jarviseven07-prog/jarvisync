@@ -11,9 +11,9 @@
 > **Note:** the interface is currently Chinese-only. The code, APIs and agent
 > integrations are language-neutral, but every label you see in the app is in
 > Chinese. English localization is not done yet. This early release is tested
-> on Windows; macOS and Linux are not verified.
+> on Windows and macOS; Linux is not verified.
 
-[Download v0.1.2](https://github.com/jarviseven07-prog/jarvisync/releases/tag/v0.1.2) ·
+[Download](https://github.com/jarviseven07-prog/jarvisync/releases) ·
 [Watch the 30-second workflow demo](https://github.com/jarviseven07-prog/jarvisync/releases/download/v0.1.0/JarviSync-Workflow-30s.mp4)
 
 The video uses a reconstructed UI and a fictional example to illustrate the
@@ -70,9 +70,29 @@ oversell:
 
 ## Quick start
 
-Version 0.1.2 includes milestone reminders, atomic node/dependency creation,
-and an upgrade fix for existing Hermes integrations.
-Agent-created nodes must declare their upstream nodes, or give an explicit
+Version 0.1.3 turns the interface monochrome, the way an e-ink panel renders,
+and is the first release verified on macOS.
+
+**Monochrome, and easier to sit with.** Light is warm paper, dark is the same
+sheet inverted, and both run on one grey ramp with no colour anywhere. Status is
+carried by lightness instead of hue — in progress is the darkest, done the
+faintest — and every node already spells out 进行中 / 受阻 / 已完成 in words,
+so nothing is lost with the colour.
+
+**macOS support.** The desktop shell, the board service and agent onboarding all
+run on macOS. `npm run package:desktop` now builds for the host platform and
+produces a `JarviSync.app` with its own name and icon. Windows buttons give way
+to the native traffic lights, and the Claude Code and Codex executables are found
+where macOS installs them.
+
+**A silent failure, fixed.** The check for "is this file the entry point" did not
+resolve symlinks, and macOS points `/var` at `/private/var`. The MCP server, the
+hooks and the board service were all affected: the process would start, run no
+main function, and report nothing. Windows never hits this.
+
+No desktop package is published for 0.1.3 yet; build it from source.
+
+Unchanged since 0.1.2: agent-created nodes must declare their upstream nodes, or give an explicit
 reason for being independent. Existing graph relationships are preserved.
 At supported host events, an active run with no new progress for about ten
 minutes gets a prompt to review milestones; the agent still decides whether
@@ -84,16 +104,21 @@ refresh the installed integration and reload it in the host so the new tools
 and hooks are loaded. Keep the backup if you need to return to an older version.
 
 **Windows x64 portable app:** download the desktop ZIP from
-[v0.1.2 Releases](https://github.com/jarviseven07-prog/jarvisync/releases/tag/v0.1.2),
-extract the entire archive, and open `JarviSync.exe` inside. Keep the extracted
-files together. No separate Node.js installation is needed for the bundled app.
+[Releases](https://github.com/jarviseven07-prog/jarvisync/releases), extract the
+entire archive, and open `JarviSync.exe` inside. Keep the extracted files
+together. No separate Node.js installation is needed for the bundled app.
+
+**macOS:** no prebuilt package yet. Build from source as below, then run
+`npm run package:desktop`; the result is
+`artifacts/desktop/JarviSync-darwin-<arch>/JarviSync.app`, which you can drag
+into Applications.
 
 **From source:** requires **Git and Node.js 24+**. Run these commands in a terminal:
 
 ```bash
 git clone https://github.com/jarviseven07-prog/jarvisync.git
 cd jarvisync
-git checkout v0.1.2
+git checkout main
 npm ci
 npm run build
 ```
