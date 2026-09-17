@@ -1,15 +1,15 @@
 .progress-edge {
-  --progress-edge-color: #c4b9a9;
+  --progress-edge-color: #c2c0b9;
   --progress-edge-width: 1.55;
 }
 
 .progress-edge--active {
-  --progress-edge-color: var(--teal, #287e6d);
+  --progress-edge-color: var(--teal, #282726);
   --progress-edge-width: 2;
 }
 
 .progress-edge--complete {
-  --progress-edge-color: var(--teal, #287e6d);
+  --progress-edge-color: var(--teal, #282726);
   --progress-edge-width: 1.8;
 }
 
@@ -29,7 +29,7 @@
 
 .progress-edge__relation {
   pointer-events: none;
-  stroke: var(--red, #bd5345);
+  stroke: var(--red, #403e3c);
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 5;
@@ -51,14 +51,14 @@
 }
 
 .progress-edge__pulse-glow {
-  stroke: rgba(255, 255, 255, .38);
+  stroke: rgba(255,255,250,.38);
   stroke-width: 7;
   filter: blur(1.5px);
   animation: progress-edge-flow 1.9s linear infinite;
 }
 
 .progress-edge__pulse-core {
-  stroke: #f0ebdc;
+  stroke: #f3f1eb;
   stroke-width: 2.6;
   animation: progress-edge-flow 1.9s linear infinite;
 }
@@ -80,13 +80,13 @@
 }
 
 html[data-theme='dark'] .progress-edge--idle {
-  --progress-edge-color: #817668;
+  --progress-edge-color: #7e7d7b;
 }
 
 html[data-theme='dark'] .progress-edge__pulse-glow {
-  stroke: rgba(177, 219, 204, .3);
+  stroke: rgba(213,213,211,.3);
 }
 
 html[data-theme='dark'] .progress-edge__pulse-core {
-  stroke: #d8f3e7;
+  stroke: #eae9e7;
 }
