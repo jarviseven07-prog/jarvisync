@@ -8,7 +8,7 @@ import { computeBuildIdentity } from '../server/build-identity.mjs';
 
 const exec = promisify(execFile);
 const exists = async path => Boolean(await stat(path).catch(() => null));
-const names = { codex: 'Codex', 'claude-code': 'Claude Code', hermes: 'Hermes', mcp: '其他 Agent' };
+const names = { codex: 'Codex', 'claude-code': 'Claude Code', mcp: '其他 Agent' };
 // Electron can read individual files inside ASAR, but its cp wrapper cannot
 // extract a whole archived directory. Copy our packaged templates file by file.
 async function copyTemplate(source, target) {
@@ -62,7 +62,6 @@ export async function findHost(host, { homeDir = homedir(), hostExecutables = {}
   if (hostExecutables[host]) return hostExecutables[host];
   const environment = { ...process.env, ...hostEnv };
   const candidates = [];
-  if (host === 'hermes') candidates.push(join(environment.HERMES_HOME || join(homeDir, '.hermes'), 'bin', process.platform === 'win32' ? 'hermes.exe' : 'hermes'));
   // Claude Desktop keeps its bundled Code beside itself, versioned, and never on PATH. The macOS
   // build wraps the same executable in an .app bundle.
   if (host === 'claude-code' && (process.platform === 'win32' || process.platform === 'darwin')) {
@@ -114,10 +113,10 @@ export async function prepareIntegration({ root, dataDir, url, boardInstanceId, 
   const distDir = join(sourceRoot, 'dist');
   const runtimeBuild = await computeBuildIdentity({ root: sourceRoot, distDir });
   const base = join(dataDir, 'agent-integrations', 'profiles', profile.id);
-  const pluginName = profile.host === 'hermes' ? 'jarvisync-hermes' : 'jarvisync';
+  const pluginName = 'jarvisync';
   const pluginRoot = join(base, 'plugins', pluginName);
   const runtime = join(pluginRoot, 'runtime');
-  const template = join(root, 'integrations', profile.host, profile.host === 'hermes' ? 'plugin' : 'jarvisync');
+  const template = join(root, 'integrations', profile.host, 'jarvisync');
   if (profile.host !== 'mcp') await copyTemplate(template, pluginRoot);
   await mkdir(runtime, { recursive: true });
   await copyTemplate(join(root, 'integrations', 'runtime'), runtime);
@@ -187,10 +186,6 @@ export async function installIntegration(profile, options = {}) {
     // install skips existing plugins; update refreshes their versioned cache
     // while preserving enablement and installations belonging to other scopes.
     await run(['plugin', installed ? 'update' : 'install', selector, '--scope', 'user']);
-  } else {
-    // Hermes native plugin installation is finalized against the installed host API.
-    const { installHermes } = await import('./hermes/install.mjs');
-    await installHermes({ profile, executable, run, ...options });
-  }
+  } else throw new Error(`不支持的宿主：${profile.host}。`);
   return { installation: 'awaiting-host', installedAt: new Date().toISOString(), message: profile.host === 'codex' ? '已安装。请在 Codex 的 /hooks 中核对并信任 JarviSync，然后重新打开对话。' : '已安装。请重新打开对话，完成宿主的工具与插件确认，再进行验证。' };
 }

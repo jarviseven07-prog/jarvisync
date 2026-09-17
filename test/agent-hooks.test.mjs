@@ -84,14 +84,14 @@ test('子 Agent 使用独立会话标识，不会把父会话的绑定交给子 
   assert.equal(client.calls.some(([name]) => name === 'attach' || name === 'change'), false);
 }));
 
-test('Hermes 子 Agent 保留宿主提供的真实 child session ID，并单独保留父会话', () => {
+test('子 Agent 保留宿主提供的真实 child session ID，并单独保留父会话', () => {
   const input = normalizeHookInput({
-    hook_event_name: 'SubagentStart', session_id: 'hermes-child', parent_session_id: 'hermes-parent',
-    child_session_id: 'hermes-child', agent_id: 'worker-1', agent_type: 'research', task_scope: '查资料',
-  }, 'hermes', 'profile-hermes');
-  assert.deepEqual(input.parentSession, { host: 'hermes', profileId: 'profile-hermes', sessionId: 'hermes-parent' });
-  assert.deepEqual(input.session, { host: 'hermes', profileId: 'profile-hermes', sessionId: 'hermes-child' });
-  assert.equal(input.agent.childSessionId, 'hermes-child');
+    hook_event_name: 'SubagentStart', session_id: 'child-session', parent_session_id: 'parent-session',
+    child_session_id: 'child-session', agent_id: 'worker-1', agent_type: 'research', task_scope: '查资料',
+  }, 'claude-code', 'profile-sub');
+  assert.deepEqual(input.parentSession, { host: 'claude-code', profileId: 'profile-sub', sessionId: 'parent-session' });
+  assert.deepEqual(input.session, { host: 'claude-code', profileId: 'profile-sub', sessionId: 'child-session' });
+  assert.equal(input.agent.childSessionId, 'child-session');
 });
 
 test('没有独立子 Agent 标识时不访问或记录父会话', async () => isolated(async ({ config }) => {

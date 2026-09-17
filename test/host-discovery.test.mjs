@@ -39,5 +39,4 @@ test('macOS 从 Finder 启动只有系统 PATH 时，仍能在常见 CLI 安装�
   await writeFile(join(local, 'codex'), 'fixture-only');
   const finderPath = '/usr/bin:/bin:/usr/sbin:/sbin';
   assert.equal(await findHost('codex', { homeDir: directory, hostEnv: { PATH: finderPath } }), join(local, 'codex'));
-  assert.equal(await findHost('hermes', { homeDir: directory, hostEnv: { PATH: finderPath } }), null);
 });

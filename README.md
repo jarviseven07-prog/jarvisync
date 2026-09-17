@@ -43,9 +43,9 @@ A single local canvas holding projects, nodes and their dependencies.
   are read on demand; the board does not broadcast their full contents.
 - **Several projects stay legible.** A summary counts what is running, what is
   unblocked, and what is waiting on you.
-- **Any agent can connect.** Integration packages for Codex, Claude Code and
-  Hermes, plus a generic MCP server. Built for people running several agents
-  and several models at once.
+- **Any agent can connect.** Integration packages for Codex and Claude Code,
+  plus a generic MCP server for every other host. Built for people running
+  several agents and several models at once.
 - **It is a ladder, not a cage.** The board stores structure; what you build on
   top of it is yours.
 
@@ -62,8 +62,8 @@ oversell:
   back, rather than process-liveness checks or command-output monitoring. A node
   that looks idle may be an agent that simply has not reported.
 - **It does not launch or schedule agents.** `start` and `stop` record receipts;
-  the actual starting and stopping is done by your host (Claude Code, Codex,
-  Hermes…). Writing an owner or a model name onto a node does not run anything.
+  the actual starting and stopping is done by your host (Claude Code, Codex…).
+  Writing an owner or a model name onto a node does not run anything.
 - **It does not pick models or keep a wake-up daemon running.**
 - **Browsing and agent reads/writes never call a model.** The board itself does
   no inference.
@@ -158,7 +158,6 @@ recording scope, then install. `integrations/` ships packages for:
 |---|---|
 | Claude Code | plugin + MCP |
 | Codex | plugin + MCP |
-| Hermes | native plugin + separate MCP config |
 
 These are adapter packages, not a claim that every host and model has passed a
 real new-session workflow. Host trust, installation and a read/write check are

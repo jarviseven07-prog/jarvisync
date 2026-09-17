@@ -31,10 +31,10 @@ test('工具预检明确拒绝缺失验证值和不完整节点参数，不发�
 
 test('resolve 工具传递真实会话及原失败请求身份，不接受替换正文', async () => {
   let received;
-  const execute = createToolHandler({ host: 'hermes', profileId: 'p' }, { resolvePending: async args => { received = args; return { state: 'discarded' }; } });
+  const execute = createToolHandler({ host: 'codex', profileId: 'p' }, { resolvePending: async args => { received = args; return { state: 'discarded' }; } });
   const args = { sessionId: 'real-session', clientOperationId: 'failed-original', expectedRevision: 12, resolution: 'discard' };
   assert.equal((await execute('jarvisync_resolve', args)).state, 'discarded');
-  assert.deepEqual(received, { session: { host: 'hermes', profileId: 'p', sessionId: 'real-session' }, clientOperationId: 'failed-original', expectedRevision: 12, resolution: 'discard' });
+  assert.deepEqual(received, { session: { host: 'codex', profileId: 'p', sessionId: 'real-session' }, clientOperationId: 'failed-original', expectedRevision: 12, resolution: 'discard' });
   await assert.rejects(execute('jarvisync_resolve', { ...args, change: {} }), /不支持/);
 });
 

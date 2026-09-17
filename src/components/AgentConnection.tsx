@@ -11,11 +11,10 @@ interface Profile {
   scopeInvalid?: boolean;
 }
 interface Status { boardInstanceId: string; hosts: Array<{ host: string; name: string; available: boolean }>; profiles: Profile[] }
-const labels: Record<string, string> = { codex: 'Codex', 'claude-code': 'Claude Code', hermes: 'Hermes', mcp: '其他 Agent' };
+const labels: Record<string, string> = { codex: 'Codex', 'claude-code': 'Claude Code', mcp: '其他 Agent' };
 const hostDescriptions: Record<string, string> = {
   codex: '通过 Codex 插件市场安装；安装后还要在 /hooks 核对并信任 JarviSync。',
   'claude-code': '通过 Claude Code 插件市场安装。它没有可用的 Interrupt Hook，用户中断不能全部自动回传。',
-  hermes: '复制并启用 Hermes 原生插件，同时写入它的 MCP 连接配置。',
   mcp: '导入一份本机 MCP 配置。它提供相同工具，但没有宿主的自动会话检查。',
 };
 async function api<T>(action = '', body?: object): Promise<T> {
