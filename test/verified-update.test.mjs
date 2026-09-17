@@ -240,7 +240,8 @@ test('build identity maps a verified artifact and installed dist to the same run
   assert.notEqual(sourceChanged.buildId, installed.buildId);
 });
 
-test('verified candidate backs up and replaces an isolated old service before health readback', async t => {
+// The verified-update flow is PowerShell: it only runs, and is only tested, on Windows.
+test('verified candidate backs up and replaces an isolated old service before health readback', { skip: process.platform !== 'win32' }, async t => {
   // GitHub's Windows TEMP may contain an 8.3 alias such as RUNNER~1.
   // Windows PowerShell expands it before checking the process command line,
   // so launch the fixture through the same canonical path.
@@ -340,7 +341,7 @@ test('verified candidate backs up and replaces an isolated old service before he
   assert.equal(await readFile(join(loaded.Backup, 'data', 'board.json'), 'utf8'), await readFile(join(data, 'board.json'), 'utf8'));
 });
 
-test('verified update backup skips a locked Electron profile but preserves all business data and fails on business copy errors', async t => {
+test('verified update backup skips a locked Electron profile but preserves all business data and fails on business copy errors', { skip: process.platform !== 'win32' }, async t => {
   const directory = await mkdtemp(join(tmpdir(), 'jarvisync-verified-backup-'));
   const data = join(directory, 'data');
   const dist = join(directory, 'dist');
