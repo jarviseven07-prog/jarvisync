@@ -8,9 +8,15 @@ on:
 
 jobs:
   test:
-    # Windows-only on purpose: the launcher, the verified-update flow and the
-    # desktop shell are PowerShell and Windows-specific.
-    runs-on: windows-latest
+    # Both supported platforms run the suite. The launcher, the verified-update
+    # flow and the desktop shell are PowerShell and Windows-specific, and each
+    # platform skips the other's cases, so neither run covers the other.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
