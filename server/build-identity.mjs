@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
 import { resolve, relative, sep } from 'node:path';
-import { isMainModule } from '../integrations/runtime/client.mjs';
+import { fileURLToPath } from 'node:url';
 
 export const BUILD_ID_VERSION = 'jarvisync-build-v1';
 const BACKEND_ROOTS = ['server', 'shared', 'integrations'];
@@ -65,7 +66,13 @@ export async function computeBuildIdentity({ root, distDir }) {
   return { version: BUILD_ID_VERSION, buildId: hash.digest('hex'), inputs };
 }
 
-const invoked = isMainModule(import.meta.url);
+// The verified-update flow runs this file on its own, staging server/ without
+// integrations/, so the entry-point check stays local instead of importing one.
+// Real paths, because macOS resolves module URLs through symlinks (/var -> /private/var)
+// while argv[1] keeps the spelling the caller passed.
+const realPath = path => { try { return realpathSync(path); } catch { return null; } };
+const entry = process.argv[1] ? realPath(resolve(process.argv[1])) : null;
+const invoked = entry !== null && entry === realPath(fileURLToPath(import.meta.url));
 if (invoked) {
   const [root, distDir] = process.argv.slice(2);
   if (!root || !distDir) throw new Error('用法：node server/build-identity.mjs <root> <distDir>');
