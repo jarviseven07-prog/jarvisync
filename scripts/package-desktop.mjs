@@ -24,7 +24,15 @@ for (const [packagePath, metadata] of Object.entries(lock.packages).sort(([left]
   for (const name of files) notices.push(`--- ${name} ---\n${await readFile(join(packageRoot, name), 'utf8')}`);
 }
 const thirdPartyNotices = `${notices.join('\n\n')}\n`;
-const quickStart = `JarviSync ${pkg.version} — Windows x64\n\n完整解压 ZIP 后，双击 JarviSync.exe。请保留同目录的全部文件。\nExtract the whole ZIP, then open JarviSync.exe. Keep all files together.\n\n当前界面为中文。桌面包无需另行安装 Node.js；接入 Agent 前请先安装对应宿主。\nThe interface is currently Chinese. The desktop package includes its runtime; install your agent host separately.\n\n默认数据目录 / Data: %APPDATA%/Nodeboard/data\n备份前请暂停 Agent 写入，关闭应用并停止使用此数据目录的后台服务，再复制整个目录。\nPause agent writes and stop the app and any background service using this data directory before copying the entire directory.\n\n源码、文档与更新 / Source, documentation and updates:\nhttps://github.com/jarviseven07-prog/jarvisync\n\nJarviSync: MIT (LICENSE-JarviSync.txt)\nThird-party notices: THIRD_PARTY_NOTICES.txt, LICENSE, LICENSES.chromium.html\n`;
+// Packaging targets the host by default; NODEBOARD_PACKAGE_PLATFORM/ARCH cross-build.
+const platform = process.env.NODEBOARD_PACKAGE_PLATFORM || process.platform;
+const arch = process.env.NODEBOARD_PACKAGE_ARCH || (platform === 'win32' ? 'x64' : process.arch);
+const mac = platform === 'darwin';
+const openInstruction = mac
+  ? `完整解压 ZIP 后，把 JarviSync.app 拖进「应用程序」再打开。首次打开若被 Gatekeeper 拦下，请在 Finder 里右键点按它并选「打开」。\nExtract the ZIP, drag JarviSync.app into Applications, then open it. If Gatekeeper blocks the first launch, right-click the app in Finder and choose Open.`
+  : `完整解压 ZIP 后，双击 JarviSync.exe。请保留同目录的全部文件。\nExtract the whole ZIP, then open JarviSync.exe. Keep all files together.`;
+const dataLocation = mac ? '~/Library/Application Support/Nodeboard/data' : '%APPDATA%/Nodeboard/data';
+const quickStart = `JarviSync ${pkg.version} — ${mac ? `macOS ${arch}` : `Windows ${arch}`}\n\n${openInstruction}\n\n当前界面为中文。桌面包无需另行安装 Node.js；接入 Agent 前请先安装对应宿主。\nThe interface is currently Chinese. The desktop package includes its runtime; install your agent host separately.\n\n默认数据目录 / Data: ${dataLocation}\n备份前请暂停 Agent 写入，关闭应用并停止使用此数据目录的后台服务，再复制整个目录。\nPause agent writes and stop the app and any background service using this data directory before copying the entire directory.\n\n源码、文档与更新 / Source, documentation and updates:\nhttps://github.com/jarviseven07-prog/jarvisync\n\nJarviSync: MIT (LICENSE-JarviSync.txt)\nThird-party notices: THIRD_PARTY_NOTICES.txt, LICENSE, LICENSES.chromium.html\n`;
 await mkdir(join(root, 'artifacts'), { recursive: true });
 const staging = await mkdtemp(join(root, 'artifacts', 'desktop-source-'));
 for (const name of ['desktop', 'server', 'shared', 'integrations']) await cp(join(root, name), join(staging, name), { recursive: true, filter: path => !path.split(/[\\/]/).includes('__pycache__') && !/\.(pyc|pyo)$/.test(path) });
@@ -32,7 +40,13 @@ await cp(resolve(process.env.NODEBOARD_PACKAGE_DIST_DIR || join(root, 'dist')), 
 await writeFile(join(staging, 'LICENSE'), license);
 await writeFile(join(staging, 'THIRD_PARTY_NOTICES.txt'), thirdPartyNotices);
 await writeFile(join(staging, 'package.json'), JSON.stringify({ name: 'nodeboard', productName: 'JarviSync', version: pkg.version, main: 'desktop/main.cjs', description: '多 Agent 协作与项目管理看板', author: 'Jarvis', license: pkg.license }, null, 2));
-const paths = await packager({ dir: staging, out: join(root, 'artifacts', 'desktop'), name: 'JarviSync', icon: join(root, 'desktop', 'assets', 'jarvisync.ico'), platform: 'win32', arch: 'x64', electronVersion: pkg.devDependencies.electron.replace(/^[^\d]+/, ''), overwrite: true, asar: true, prune: false, win32metadata: { CompanyName: 'Jarvis', FileDescription: 'JarviSync 项目画布', ProductName: 'JarviSync' } });
+const paths = await packager({ dir: staging, out: join(root, 'artifacts', 'desktop'), name: 'JarviSync',
+  icon: join(root, 'desktop', 'assets', mac ? 'jarvisync.icns' : 'jarvisync.ico'),
+  platform, arch, electronVersion: pkg.devDependencies.electron.replace(/^[^\d]+/, ''), overwrite: true, asar: true, prune: false,
+  // The bundle identifier and category are what macOS reads for the Dock name, Launchpad entry and
+  // per-app system settings; without them the bundle inherits Electron's own identity.
+  ...(mac ? { appBundleId: 'ai.jarvis.jarvisync', appCategoryType: 'public.app-category.productivity', darwinDarkModeSupport: true } : {}),
+  ...(mac ? {} : { win32metadata: { CompanyName: 'Jarvis', FileDescription: 'JarviSync 项目画布', ProductName: 'JarviSync' } }) });
 for (const path of paths) {
   await writeFile(join(path, 'LICENSE-JarviSync.txt'), license);
   await writeFile(join(path, 'THIRD_PARTY_NOTICES.txt'), thirdPartyNotices);

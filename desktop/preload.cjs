@@ -10,6 +10,7 @@ function stateFrom(value) {
 }
 
 contextBridge.exposeInMainWorld('desktopWindow', Object.freeze({
+  platform: process.platform,
   getState: () => ipcRenderer.invoke('desktop-window:get-state').then(stateFrom),
   minimize: () => ipcRenderer.invoke('desktop-window:minimize'),
   toggleMaximize: () => ipcRenderer.invoke('desktop-window:toggle-maximize'),

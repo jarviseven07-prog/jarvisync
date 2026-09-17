@@ -7,6 +7,9 @@ const { mkdir, readFile, rename, writeFile, unlink } = require('node:fs/promises
 
 app.setName('JarviSync');
 if (process.platform === 'win32') app.setAppUserModelId('Jarvis.JarviSync');
+// A packaged .app carries its own icon and Dock name. Running from source the host process is
+// Electron itself, so at least the Dock icon is replaced; its name stays Electron until packaged.
+if (process.platform === 'darwin' && !app.isPackaged) app.dock?.setIcon(join(__dirname, 'assets', 'jarvisync.png'));
 const projectRoot = resolve(__dirname, '..');
 const desktopShellId = require('./shell-identity.cjs').computeDesktopShellId(projectRoot);
 const workspaceMode = process.env.NODEBOARD_DESKTOP_MODE === 'workspace';
@@ -160,11 +163,15 @@ else {
       const response = await fetch(url, { signal: AbortSignal.timeout(2000), redirect: 'error' });
       hasDesktopControls = response.ok && (await response.text()).includes('name="jarvisync-desktop-controls" content="1"');
     } catch { /* The native frame remains a usable fallback. */ }
+    // macOS puts its window buttons in the frame itself. Hiding the title bar keeps the traffic
+    // lights and still hands the strip to the frontend; a frameless window would drop them.
+    const insetTitleBar = hasDesktopControls && process.platform === 'darwin';
     window = new BrowserWindow({
       width: 1480, height: 960, minWidth: 860, minHeight: 600,
       title: 'JarviSync · 项目画布', backgroundColor: '#F3EEE6', show: false,
-      icon: join(__dirname, 'assets', 'jarvisync.ico'),
-      frame: !hasDesktopControls,
+      icon: join(__dirname, 'assets', process.platform === 'win32' ? 'jarvisync.ico' : 'jarvisync.png'),
+      frame: insetTitleBar ? true : !hasDesktopControls,
+      ...(insetTitleBar ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 13, y: 9 } } : {}),
       autoHideMenuBar: true,
       webPreferences: {
         nodeIntegration: false,
