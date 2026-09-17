@@ -1,5 +1,5 @@
-.connection-backdrop { position: fixed; inset: 0; z-index: 100; padding: 28px; display: grid; place-items: center; background: #20292e66; backdrop-filter: blur(3px); }
-.connection-dialog { width: min(660px, 100%); max-height: calc(100dvh - 56px); overflow-y: auto; background: var(--paper); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 28px 32px 20px; box-shadow: 0 18px 70px #20292e33; }
+.connection-backdrop { position: fixed; inset: 0; z-index: 100; padding: 28px; display: grid; place-items: center; background: #100f0f66; backdrop-filter: blur(3px); }
+.connection-dialog { width: min(660px, 100%); max-height: calc(100dvh - 56px); overflow-y: auto; background: var(--paper); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 28px 32px 20px; box-shadow: 0 18px 70px #100f0f33; }
 .connection-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
 .connection-eyebrow { display: flex; gap: 7px; align-items: center; color: var(--teal); font-size: 12px; }
 .connection-header h2 { font: 600 28px/1.4 var(--font-display); margin: 9px 0 0; }
