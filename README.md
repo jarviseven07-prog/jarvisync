@@ -99,7 +99,8 @@ session event ever reached the board, so onboarding kept reporting that no nativ
 session entry had arrived. The mechanism is platform-independent; 0.1.1 and 0.1.2
 are both affected.
 
-No desktop package is published for 0.1.3 yet; build it from source.
+The 0.1.3 release ships a macOS (Apple silicon) desktop package; no Windows
+package is attached this time — see below.
 
 Unchanged since 0.1.2: agent-created nodes must declare their upstream nodes, or give an explicit
 reason for being independent. Existing graph relationships are preserved.
@@ -112,15 +113,19 @@ new ZIP into a separate directory. In **接入我的 Agent** (Connect my Agent),
 refresh the installed integration and reload it in the host so the new tools
 and hooks are loaded. Keep the backup if you need to return to an older version.
 
-**Windows x64 portable app:** download the desktop ZIP from
-[Releases](https://github.com/jarviseven07-prog/jarvisync/releases), extract the
-entire archive, and open `JarviSync.exe` inside. Keep the extracted files
-together. No separate Node.js installation is needed for the bundled app.
+**Windows x64 portable app:** 0.1.3 has no Windows package yet. The desktop ZIP
+on the [v0.1.2 release](https://github.com/jarviseven07-prog/jarvisync/releases/tag/v0.1.2)
+still works but carries the hook problem above; Windows users who need that fix
+should run from source as below for now. To use the portable app, extract the
+entire archive and open `JarviSync.exe` inside, keeping the extracted files
+together; it bundles its runtime, so no separate Node.js is needed.
 
-**macOS:** no prebuilt package yet. Build from source as below, then run
-`npm run package:desktop`; the result is
-`artifacts/desktop/JarviSync-darwin-<arch>/JarviSync.app`, which you can drag
-into Applications.
+**macOS (Apple silicon):** download `JarviSync-v0.1.3-macos-arm64.zip` from the
+[v0.1.3 release](https://github.com/jarviseven07-prog/jarvisync/releases/tag/v0.1.3),
+extract it, and drag `JarviSync.app` into Applications. The app is not notarized,
+so the first launch is blocked: open System Settings → Privacy & Security and
+choose Open Anyway. Intel Macs have no prebuilt package yet; build from source as
+below, then run `npm run package:desktop`.
 
 **From source:** requires **Git and Node.js 24+**. Run these commands in a terminal:
 
