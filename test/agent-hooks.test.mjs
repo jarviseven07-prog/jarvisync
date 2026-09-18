@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { startServer } from '../server/index.mjs';
 import { createClient } from '../integrations/runtime/client.mjs';
 import { connectionOption, normalizeHookInput, readSessionState, runHook, sessionStateFile, updateSessionState, writeSessionState } from '../integrations/runtime/hook.mjs';
@@ -403,6 +405,50 @@ test('真实本地服务只接收配置中的 host/profile 与规范事件', asy
     assert.equal(status.session.lastEvent, 'UserPromptSubmit');
     assert.equal(status.session.lastTurn, 'turn-live');
     assert.equal(status.session.model, 'gpt-live');
+  } finally {
+    await app.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('hook 入口以独立进程连通本地服务，不会因模块回环等满网络预算', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'jarvisync-hook-entry-'));
+  const app = await startServer({ port: 0, dataDir: directory });
+  try {
+    await app.onboarding.prepare({ host: 'claude-code', scope: 'work' });
+    const profile = (await app.onboarding.read()).profiles.find(item => item.host === 'claude-code');
+    const session = { host: 'claude-code', profileId: profile.id, sessionId: 'entry-process-1' };
+    const config = {
+      url: app.url, boardInstanceId: app.store.boardInstanceId, dataDir: directory,
+      stateDir: join(directory, 'agent-integrations', 'profiles', profile.id, 'state'),
+      host: session.host, profileId: profile.id, connectionToken: profile.connectionToken,
+    };
+    const configPath = join(directory, 'entry-connection.json');
+    await writeFile(configPath, JSON.stringify(config));
+    const hookEntry = join(dirname(fileURLToPath(import.meta.url)), '..', 'integrations', 'runtime', 'hook.mjs');
+    const startedAt = Date.now();
+    const child = spawn(process.execPath, [hookEntry, '--connection', configPath, '--host', 'claude-code'], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+    child.stdin.end(JSON.stringify({ hook_event_name: 'SessionStart', session_id: session.sessionId, cwd: directory }));
+    const killFallback = setTimeout(() => child.kill(), 15000);
+    const result = await new Promise((resolve, reject) => {
+      let stdout = '', stderr = '';
+      child.stdout.on('data', chunk => { stdout += chunk; });
+      child.stderr.on('data', chunk => { stderr += chunk; });
+      child.once('error', reject);
+      child.once('close', code => resolve({ code, stdout, stderr }));
+    });
+    clearTimeout(killFallback);
+    const elapsed = Date.now() - startedAt;
+    assert.equal(result.code, 0, result.stderr);
+    // 回环死锁的唯一破局者是 2000ms 网络预算，入口耗时必然超过预算；正常路径在百毫秒级。
+    assert.ok(elapsed < 1900, `hook 入口耗时 ${elapsed}ms，疑似模块回环死锁回归\n${result.stderr}`);
+    const runtime = await readFile(join(config.stateDir, 'hook-runtime.json'), 'utf8').then(JSON.parse).catch(() => null);
+    assert.notEqual(runtime?.reason, 'hook-network-timeout');
+    assert.equal(JSON.parse(result.stdout).hookSpecificOutput.hookEventName, 'SessionStart');
+    const cached = await readSessionState(config, session);
+    assert.equal(cached.lastEvent, 'SessionStart');
+    const status = await createClient(config).request('status', { session });
+    assert.equal(status.session.lastEvent, 'SessionStart');
   } finally {
     await app.close();
     await rm(directory, { recursive: true, force: true });

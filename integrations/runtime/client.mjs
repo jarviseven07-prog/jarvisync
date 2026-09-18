@@ -5,6 +5,10 @@ import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { computeBuildIdentity } from './build-identity.mjs';
+// hook.mjs 静态引入本模块；会话状态缓存必须来自独立模块而不能回环 import hook.mjs：
+// hook.mjs 作为 CLI 入口时顶层 await 尚未完成，回环的动态 import 会等入口求值结束，
+// 而入口又在等本函数返回，互等直到网络预算耗尽（原 2 秒超时死锁）。
+import { updateSessionState } from './session-state.mjs';
 
 export const digest = value => createHash('sha256').update(value).digest('hex');
 // macOS resolves module URLs through symlinks (/var -> /private/var) while argv[1] keeps the
@@ -142,7 +146,6 @@ export function createClient(config, options = {}) {
     // a failed/retriable operation. No extra network request is needed.
     if (sessionMatches(body.session) && Object.hasOwn(result, 'binding')) {
       try {
-        const { updateSessionState } = await import('./hook.mjs');
         await updateSessionState(config, body.session, current => {
           if (Number.isSafeInteger(result.revision) && Number.isSafeInteger(current?.bindingRevision)
               && result.revision < current.bindingRevision) return current;
