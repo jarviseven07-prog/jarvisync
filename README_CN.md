@@ -75,7 +75,7 @@ v0.1.3 把界面换成电子墨水屏风格的单色配色，并首次在 macOS 
 结果是 hook 报超时、进入 60 秒离线冷却，会话事件始终到不了看板，
 接入界面一直显示「尚未收到原生会话入口」。机制与操作系统无关，v0.1.1 和 v0.1.2 都受影响。
 
-v0.1.3 的桌面包尚未发布，需要自行从源码构建。
+v0.1.3 的发布页附带 macOS(Apple 芯片)桌面包；Windows 包本次尚未附带，见下方说明。
 
 以下行为自 v0.1.2 起未变：Agent 新建节点须明确上游；
 确实独立时说明原因。现有节点和连线不会被自动重排或补造关系。
@@ -86,12 +86,15 @@ v0.1.3 的桌面包尚未发布，需要自行从源码构建。
 在“接入我的 Agent”中更新接入，并在宿主中重新加载插件，才能载入新版工具和 Hook。
 需要回退旧版时保留并使用升级前备份。
 
-**Windows x64 便携版：**从[发布页](https://github.com/jarviseven07-prog/jarvisync/releases)
-下载桌面 ZIP，完整解压后打开其中的 `JarviSync.exe`，保留同目录的其它文件。
-便携版自带运行时，无需另装 Node.js。
+**Windows x64 便携版：**v0.1.3 暂未附带 Windows 包。
+[v0.1.2 发布页](https://github.com/jarviseven07-prog/jarvisync/releases/tag/v0.1.2)的桌面 ZIP 仍可下载，
+但受上面的 hook 问题影响；需要这项修复的 Windows 用户，请先按下面的步骤从源码运行。
+便携版完整解压后打开其中的 `JarviSync.exe`，保留同目录的其它文件；自带运行时，无需另装 Node.js。
 
-**macOS：**尚无预编译包。按下面的步骤从源码构建后运行 `npm run package:desktop`，
-产物是 `artifacts/desktop/JarviSync-darwin-<架构>/JarviSync.app`，拖进「应用程序」即可。
+**macOS(Apple 芯片)：**从[v0.1.3 发布页](https://github.com/jarviseven07-prog/jarvisync/releases/tag/v0.1.3)
+下载 `JarviSync-v0.1.3-macos-arm64.zip`，解压后把 `JarviSync.app` 拖进「应用程序」。
+应用未经 Apple 公证，首次打开会被拦下：到「系统设置 → 隐私与安全性」点「仍要打开」。
+Intel Mac 暂无预编译包，请按下面的步骤从源码构建后运行 `npm run package:desktop`。
 
 **从源码运行：**需要 **Git 和 Node.js 24 或更新版本**，在终端运行：
 
