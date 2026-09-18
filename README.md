@@ -90,6 +90,15 @@ resolve symlinks, and macOS points `/var` at `/private/var`. The MCP server, the
 hooks and the board service were all affected: the process would start, run no
 main function, and report nothing. Windows never hits this.
 
+**Hook session events never reached the board (since 0.1.1).** Writing the
+session cache back, the hook dynamically imported itself — while running as the
+process entry, still suspended in the top-level await that was waiting on that
+very write. The two waited on each other until the 2-second network budget ran
+out: the hook reported a timeout, entered its 60-second offline cooldown, and no
+session event ever reached the board, so onboarding kept reporting that no native
+session entry had arrived. The mechanism is platform-independent; 0.1.1 and 0.1.2
+are both affected.
+
 No desktop package is published for 0.1.3 yet; build it from source.
 
 Unchanged since 0.1.2: agent-created nodes must declare their upstream nodes, or give an explicit
