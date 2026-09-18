@@ -99,8 +99,8 @@ session event ever reached the board, so onboarding kept reporting that no nativ
 session entry had arrived. The mechanism is platform-independent; 0.1.1 and 0.1.2
 are both affected.
 
-The 0.1.3 release ships a macOS (Apple silicon) desktop package; no Windows
-package is attached this time — see below.
+The 0.1.3 release ships desktop packages for Windows (x64) and macOS (Apple
+silicon).
 
 Unchanged since 0.1.2: agent-created nodes must declare their upstream nodes, or give an explicit
 reason for being independent. Existing graph relationships are preserved.
@@ -113,12 +113,11 @@ new ZIP into a separate directory. In **接入我的 Agent** (Connect my Agent),
 refresh the installed integration and reload it in the host so the new tools
 and hooks are loaded. Keep the backup if you need to return to an older version.
 
-**Windows x64 portable app:** 0.1.3 has no Windows package yet. The desktop ZIP
-on the [v0.1.2 release](https://github.com/jarviseven07-prog/jarvisync/releases/tag/v0.1.2)
-still works but carries the hook problem above; Windows users who need that fix
-should run from source as below for now. To use the portable app, extract the
-entire archive and open `JarviSync.exe` inside, keeping the extracted files
-together; it bundles its runtime, so no separate Node.js is needed.
+**Windows x64 portable app:** download `JarviSync-v0.1.3-windows-x64.zip` from the
+[v0.1.3 release](https://github.com/jarviseven07-prog/jarvisync/releases/tag/v0.1.3),
+extract the entire archive, and open `JarviSync.exe` inside. Keep the extracted
+files together. The app bundles its runtime, so no separate Node.js is needed; it
+is unsigned, so if SmartScreen stops the first launch, choose More info → Run anyway.
 
 **macOS (Apple silicon):** download `JarviSync-v0.1.3-macos-arm64.zip` from the
 [v0.1.3 release](https://github.com/jarviseven07-prog/jarvisync/releases/tag/v0.1.3),
