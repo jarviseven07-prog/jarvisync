@@ -1,0 +1,73 @@
+name: Package for Windows
+
+# Builds the portable Windows package on a real Windows machine, starts the extracted ZIP the way a
+# user would, and keeps it as a run artifact. Attaching it to a release stays a separate step, taken
+# after the run has been looked at. Pull requests that touch packaging run it too, so the workflow is
+# checked before it is relied on.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Tag or branch to package
+        required: true
+        default: main
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/package-windows.yml
+      - scripts/package-desktop.mjs
+      - scripts/smoke-desktop-package.mjs
+
+jobs:
+  package:
+    runs-on: windows-latest
+
+    steps:
+      # The smoke script comes from this workflow's own revision, so older tags can be packaged too.
+      - uses: actions/checkout@v4
+        with:
+          path: tools
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          path: source
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: source/package-lock.json
+
+      - name: Install
+        working-directory: source
+        run: npm ci
+
+      - name: Package
+        working-directory: source
+        run: npm run package:desktop
+
+      - name: Zip
+        id: zip
+        working-directory: source
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $name = "JarviSync-v$version-windows-x64.zip"
+          Compress-Archive -Path artifacts/desktop/JarviSync-win32-x64 -DestinationPath $name
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "name=$name" >> $env:GITHUB_OUTPUT
+          "SHA-256 $((Get-FileHash $name -Algorithm SHA256).Hash.ToLower())  $name"
+
+      - name: Smoke-test the extracted package
+        shell: pwsh
+        run: |
+          $extracted = Join-Path $env:RUNNER_TEMP 'extracted'
+          Expand-Archive "source/${{ steps.zip.outputs.name }}" -DestinationPath $extracted
+          node tools/scripts/smoke-desktop-package.mjs (Join-Path $extracted 'JarviSync-win32-x64') '${{ steps.zip.outputs.version }}'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.zip.outputs.name }}
+          path: source/${{ steps.zip.outputs.name }}
+          if-no-files-found: error
