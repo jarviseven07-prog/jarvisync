@@ -1,7 +1,7 @@
-import test from 'node:test';
+import test, { before } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rename, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { startServer } from '../server/index.mjs';
@@ -25,14 +25,43 @@ const pendingPath = (f, id) => join(f.config.stateDir, 'pending', `${digest(id)}
 const resolutionPath = (f, id) => join(f.config.stateDir, 'resolved', `${digest(id)}.json`);
 const resolutionClaimPath = (f, id) => join(f.config.stateDir, 'resolution-claims', `${digest(id)}.json`);
 
+if (process.platform === 'win32') {
+  // A fresh windows-latest VM pays a one-time Defender real-time scan plus .NET
+  // Framework cold initialization on the first powershell.exe spawn, and that
+  // first spawn occasionally exceeded the old 15s readiness deadline (CI run
+  // 35310475639 timed out at exactly 15048ms with empty stderr while the next
+  // test's helper spawned in well under a second on the same VM). Pay that cold
+  // start here, before any per-test timer runs, so the lock helpers below
+  // always spawn into a warm binary cache.
+  before(async () => {
+    await new Promise(resolve => {
+      const warmup = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'exit 0'], { stdio: 'ignore', windowsHide: true });
+      warmup.once('close', resolve);
+      warmup.once('error', resolve);
+    });
+  });
+}
+
 async function lockWithoutDeleteSharing(path) {
+  // The helper holds the destination open without FILE_SHARE_DELETE, which is
+  // exactly the condition atomicJson has to outlast. Readiness is decided by
+  // observing that condition on the file system — renaming the destination
+  // must fail — instead of trusting a stdout deadline, so PowerShell startup
+  // jitter can no longer fail the test: it proceeds exactly once the lock is
+  // verifiably in force. The open loop tolerates the destination being renamed
+  // away for a few milliseconds by the readiness probe below.
   const script = [
-    '$stream = [System.IO.File]::Open($env:JARVISYNC_TEST_LOCK_PATH, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)',
-    '[Console]::Out.WriteLine("LOCKED")',
+    '$stream = $null',
+    '$deadline = [DateTime]::UtcNow.AddSeconds(60)',
+    'while ($null -eq $stream) {',
+    "  try { $stream = [System.IO.File]::Open($env:JARVISYNC_TEST_LOCK_PATH, 'Open', 'Read', 'ReadWrite') }",
+    '  catch [System.IO.IOException] { if ([DateTime]::UtcNow -ge $deadline) { throw } Start-Sleep -Milliseconds 25 }',
+    '}',
+    "[Console]::Out.WriteLine('LOCKED')",
     '[Console]::Out.Flush()',
     '[Console]::In.ReadLine() | Out-Null',
     '$stream.Dispose()',
-  ].join('; ');
+  ].join('\n');
   const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
     stdio: ['pipe', 'pipe', 'pipe'],
     env: { ...process.env, JARVISYNC_TEST_LOCK_PATH: path },
@@ -41,21 +70,49 @@ async function lockWithoutDeleteSharing(path) {
   const closed = new Promise(resolve => child.once('close', (code, signal) => resolve([code, signal])));
   let output = '';
   let errorOutput = '';
-  let ready = false;
+  child.stdout.on('data', chunk => { output += chunk; });
+  child.stderr.on('data', chunk => { errorOutput += chunk; });
   await new Promise((resolve, reject) => {
+    const probe = `${path}.lockprobe`;
+    // Ceiling for genuinely broken helpers (spawn failure, early exit, never
+    // locking) only; startup jitter never reaches it because readiness is
+    // effect-based and the binary was warmed up before the test timer started.
     const timer = setTimeout(() => {
-      child.kill();
-      reject(new Error(`lock helper did not become ready: ${errorOutput}`));
-    }, 15000);
-    child.stdout.on('data', chunk => {
-      output += chunk;
-      if (!ready && output.includes('LOCKED')) { ready = true; clearTimeout(timer); resolve(); }
-    });
-    child.stderr.on('data', chunk => { errorOutput += chunk; });
-    child.once('error', error => { clearTimeout(timer); reject(error); });
-    child.once('exit', code => {
-      if (!ready) { clearTimeout(timer); reject(new Error(`lock helper exited with ${code}: ${errorOutput}`)); }
-    });
+      finish();
+      reject(new Error(`lock helper did not make the destination rename-proof within 18s (stdout: ${output}, stderr: ${errorOutput})`));
+    }, 18000);
+    const onError = error => { finish(); reject(error); };
+    const onExit = code => { finish(); reject(new Error(`lock helper exited with ${code} before locking (stderr: ${errorOutput})`)); };
+    child.once('error', onError);
+    child.once('exit', onExit);
+    function finish() {
+      clearTimeout(timer);
+      child.off('error', onError);
+      child.off('exit', onExit);
+    }
+    (async () => {
+      try {
+        // Confirm the lock by its effect, twice in a row, so a transient hold
+        // by scanner software cannot be mistaken for the helper's handle.
+        // Every successful probe rename is undone immediately; the helper's
+        // open loop above simply retries while the path is briefly absent.
+        let consecutive = 0;
+        for (;;) {
+          try { await rename(path, probe); }
+          catch (error) {
+            if (['EACCES', 'EBUSY', 'EPERM'].includes(error.code)) {
+              if (++consecutive >= 2) { finish(); resolve(); return; }
+              await new Promise(wait => setTimeout(wait, 50));
+              continue;
+            }
+            throw error;
+          }
+          consecutive = 0;
+          await rename(probe, path);
+          await new Promise(wait => setTimeout(wait, 10));
+        }
+      } catch (error) { finish(); reject(error); }
+    })();
   }).catch(async error => {
     child.kill();
     await closed;
