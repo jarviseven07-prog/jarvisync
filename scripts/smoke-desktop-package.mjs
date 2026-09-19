@@ -75,20 +75,35 @@ async function main() {
       step('MCP handshake', `version ${version}, ${tools.length} tools`);
     } finally { mcp.stdin.end(); mcp.kill(); }
 
-    // Hosts run the hook as a process entry. Before 0.1.3 that deadlocked on the hook's own import
-    // and timed out without a word, so the event reaching the board is what counts here.
+    // Hosts run the hook as a process entry. Before 0.1.3 that deadlocked on the hook's own import,
+    // so no attempt ever got its event through. A cold machine can also miss the hook's 2 s network
+    // budget once, after which the hook stays quiet for its offline cooldown by design. A missed
+    // first attempt is therefore retried warm with the cooldown cleared, and reported rather than
+    // hidden; only a warm miss fails the check.
     const profile = await prepare('claude-code');
     const connection = JSON.parse(await readFile(profile.configPath, 'utf8'));
-    const hook = spawn(connection.nodeExecutable, [join(profile.pluginRoot, 'runtime', 'hook.mjs'), '--connection', profile.configPath, '--host', 'claude-code'], {
-      env: { ...process.env, ...connection.runtimeEnv }, stdio: ['pipe', 'ignore', 'ignore'],
-    });
-    const started = Date.now();
-    hook.stdin.end(JSON.stringify({ hook_event_name: 'SessionStart', session_id: 'smoke-session', source: 'startup' }));
-    await new Promise(ok => hook.once('close', ok));
-    const elapsed = Date.now() - started;
-    const observed = (await (await fetch(`${url}/api/onboarding`)).json()).profiles.find(item => item.id === profile.id)?.hooksObserved;
-    if (!observed) throw new Error(`the SessionStart hook ran for ${elapsed} ms but its event never reached the board`);
-    step('hook as process entry', `${elapsed} ms, event reached the board`);
+    const cooldown = join(connection.stateDir, 'hook-runtime.json');
+    const runHook = async sessionId => {
+      const hook = spawn(connection.nodeExecutable, [join(profile.pluginRoot, 'runtime', 'hook.mjs'), '--connection', profile.configPath, '--host', 'claude-code'], {
+        env: { ...process.env, ...connection.runtimeEnv }, stdio: ['pipe', 'ignore', 'ignore'],
+      });
+      const started = Date.now();
+      hook.stdin.end(JSON.stringify({ hook_event_name: 'SessionStart', session_id: sessionId, source: 'startup' }));
+      await new Promise(ok => hook.once('close', ok));
+      const elapsed = Date.now() - started;
+      const reason = JSON.parse(await readFile(cooldown, 'utf8').catch(() => '{}')).reason || 'no reason recorded';
+      const profiles = (await (await fetch(`${url}/api/onboarding`)).json()).profiles;
+      return { elapsed, reason, observed: profiles.find(item => item.id === profile.id)?.hooksObserved === true };
+    };
+    const cold = await runHook('smoke-session');
+    if (cold.observed) {
+      step('hook as process entry', `${cold.elapsed} ms, event reached the board`);
+    } else {
+      await rm(cooldown, { force: true });
+      const warm = await runHook('smoke-session-warm');
+      if (!warm.observed) throw new Error(`the SessionStart hook never got its event to the board (cold: ${cold.elapsed} ms, ${cold.reason}; warm: ${warm.elapsed} ms, ${warm.reason})`);
+      step('hook as process entry', `cold attempt missed (${cold.elapsed} ms, ${cold.reason}); warm ${warm.elapsed} ms, event reached the board`);
+    }
   } finally {
     if (process.platform === 'win32') spawn('taskkill', ['/PID', String(app.pid), '/T', '/F'], { stdio: 'ignore' });
     else app.kill();
