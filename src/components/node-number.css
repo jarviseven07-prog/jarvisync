@@ -6,8 +6,8 @@
   min-height: 19px;
   padding: 1px 5px;
   color: var(--ink);
-  background: #f1efea;
-  border: 1px solid #d5d3cc;
+  background: #eee8df;
+  border: 1px solid #d7cabc;
   border-radius: 2px;
   font-family: var(--font-mono);
   font-size: 12px;
@@ -23,7 +23,7 @@
 .inspector-node-heading { display: flex; align-items: center; gap: 9px; }
 html[data-theme='dark'] .node-number,
 html[data-theme='dark'] .flow-node header .node-number {
-  color: #dcdcd9;
-  background: #3b3a39;
-  border-color: #666664;
+  color: #e3d8cb;
+  background: #3b352e;
+  border-color: #655a4d;
 }

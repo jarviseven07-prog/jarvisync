@@ -6,30 +6,30 @@
   align-items: stretch;
   flex: 0 0 34px;
   height: 34px;
-  color: #3b3a37;
-  background: rgba(255,254,249,.98);
+  color: #4f4b45;
+  background: rgba(255, 253, 250, .98);
   border-bottom: 1px solid var(--line);
   -webkit-app-region: drag;
   user-select: none;
 }
 
-.desktop-window-controls.is-full-screen { background: rgba(255,254,249,.94); }
+.desktop-window-controls.is-full-screen { background: rgba(255, 253, 250, .94); }
 /* macOS draws its traffic lights over the left of the strip; full screen hides them again. */
 .desktop-window-controls.has-native-buttons .desktop-window-title { padding-left: 78px; }
 .desktop-window-controls.has-native-buttons.is-full-screen .desktop-window-title { padding-left: 13px; }
 .desktop-window-title { display: flex; align-items: center; min-width: 0; flex: 1; gap: 7px; padding: 0 13px; font-size: 11px; font-weight: 600; letter-spacing: .01em; }
 .desktop-window-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.desktop-window-title small { padding: 2px 5px; color: #55534f; background: #f6f4ef; border-radius: 2px; font-size: 9px; font-weight: 700; letter-spacing: .08em; }
+.desktop-window-title small { padding: 2px 5px; color: #286d5f; background: #e9f2ee; border-radius: 2px; font-size: 9px; font-weight: 700; letter-spacing: .08em; }
 .desktop-window-actions { display: flex; align-items: stretch; flex: 0 0 auto; -webkit-app-region: no-drag; }
 .desktop-window-actions button { display: grid; place-items: center; width: 46px; padding: 0; color: inherit; background: transparent; border: 0; border-radius: 0; }
-.desktop-window-actions button:hover { background: #efede7; }
+.desktop-window-actions button:hover { background: #ebe4da; }
 .desktop-window-actions button:focus-visible { position: relative; z-index: 1; outline-offset: -3px; }
-.desktop-window-actions .desktop-window-close:hover { color: #fffffa; background: #403e3c; }
+.desktop-window-actions .desktop-window-close:hover { color: #fff; background: #bd5345; }
 
-html[data-theme='dark'] .desktop-window-controls { color: #d6d5d3; background: rgba(39,39,38,.98); border-color: #575653; }
-html[data-theme='dark'] .desktop-window-controls.is-full-screen { background: rgba(39,39,38,.94); }
-html[data-theme='dark'] .desktop-window-actions button:hover { background: #525150; }
-html[data-theme='dark'] .desktop-window-title small { color: #cdccca; background: #444443; }
+html[data-theme='dark'] .desktop-window-controls { color: #d8d0c5; background: rgba(41, 40, 36, .98); border-color: #4c473f; }
+html[data-theme='dark'] .desktop-window-controls.is-full-screen { background: rgba(41, 40, 36, .94); }
+html[data-theme='dark'] .desktop-window-actions button:hover { background: #49443d; }
+html[data-theme='dark'] .desktop-window-title small { color: #a2d0c2; background: #2d413b; }
 
 @media (max-width: 760px) {
   .desktop-window-controls { flex-basis: 30px; height: 30px; }
