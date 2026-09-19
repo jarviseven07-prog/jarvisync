@@ -100,7 +100,10 @@ session entry had arrived. The mechanism is platform-independent; 0.1.1 and 0.1.
 are both affected.
 
 The 0.1.3 release ships desktop packages for Windows (x64) and macOS (Apple
-silicon).
+silicon). Prefer the original colours? The
+[classic build](https://github.com/jarviseven07-prog/jarvisync/releases/tag/v0.1.3-classic)
+is identical to 0.1.3 except that it keeps the palette from before the e-ink
+change.
 
 Unchanged since 0.1.2: agent-created nodes must declare their upstream nodes, or give an explicit
 reason for being independent. Existing graph relationships are preserved.
